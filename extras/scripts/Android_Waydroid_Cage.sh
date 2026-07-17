@@ -7,6 +7,7 @@ BUNDLE="$HOME/.local/opt/steamos-waydroid/current"
 CAGE="$BUNDLE/bin/cage"
 WLR_RANDR="$BUNDLE/bin/wlr-randr"
 TARGET_CHECK="$BUNDLE/tools/check-bundle-target.sh"
+COMPATIBILITY_REPORT="$BUNDLE/tools/compatibility-report.sh"
 TARGET_ALLOW="$HOME/.local/opt/steamos-waydroid/allow-target-mismatch"
 CONFIG_DIR="$SCRIPT_DIR/config"
 RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
@@ -25,9 +26,16 @@ then
 fi
 if ! TARGET_CHECK_OUTPUT=$("$TARGET_CHECK" "${target_check_args[@]}" 2>&1)
 then
+	REPORT_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid/reports/$(date -u +%Y%m%dT%H%M%SZ)-compatibility.md"
+	if [ -x "$COMPATIBILITY_REPORT" ]
+	then
+		"$COMPATIBILITY_REPORT" "$BUNDLE" "$REPORT_FILE" || true
+	fi
 	kdialog --error "The private Cage bundle does not match this SteamOS build.
 
 $TARGET_CHECK_OUTPUT
+
+Compatibility report: $REPORT_FILE
 
 Rebuild and install the bundle before launching Waydroid."
 	exit 1

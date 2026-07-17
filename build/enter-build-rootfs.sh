@@ -37,6 +37,7 @@ sudo systemd-nspawn \
     --bind-ro="$TARGET_FINGERPRINT_FILE:/work/target-fingerprint.env" \
     --setenv="BUNDLE_VERSION=$BUNDLE_VERSION" \
     --setenv="TARGET_FINGERPRINT_FILE=/work/target-fingerprint.env" \
+    --setenv="REPORT_ROOT=/work/out/reports" \
     --setenv="HOST_UID=$(id -u)" \
     --setenv="HOST_GID=$(id -g)" \
     /usr/bin/bash

@@ -41,6 +41,7 @@ done
 
 PROJECT_ROOT="$HOME/.local/opt/steamos-waydroid"
 TARGET_MISMATCH_ALLOW_FILE="$PROJECT_ROOT/allow-target-mismatch"
+REPORT_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid/reports"
 mkdir -p "$HOME/.cache"
 DOWNLOAD_ROOT="$(mktemp -d "$HOME/.cache/steamos-waydroid-artifact.XXXXXX")"
 cleanup() {
@@ -134,7 +135,16 @@ target_check_arguments=("$TARGET_ROOT")
 if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then
     target_check_arguments+=(--allow-target-mismatch)
 fi
-"$TARGET_ROOT/tools/check-bundle-target.sh" "${target_check_arguments[@]}"
+if ! target_check_output=$(
+    "$TARGET_ROOT/tools/check-bundle-target.sh" "${target_check_arguments[@]}" 2>&1
+); then
+    report_file="$REPORT_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-compatibility.md"
+    "$TARGET_ROOT/tools/compatibility-report.sh" \
+        "$TARGET_ROOT" "$report_file" || true
+    printf '%s\n' "$target_check_output" >&2
+    die "bundle target check failed; report saved to $report_file"
+fi
+printf '%s\n' "$target_check_output"
 
 if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then
     printf '%s\n' "$BUNDLE_VERSION" > "$TARGET_MISMATCH_ALLOW_FILE"

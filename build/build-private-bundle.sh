@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 
+enable_build_failure_report
+set_build_report_stage preflight
+
 require_steamos_root
 
 for command_name in git meson ninja patchelf pkg-config readelf ldd; do
@@ -123,6 +126,7 @@ archive_incomplete_output() {
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 
+set_build_report_stage source-checkout
 clone_at_tag \
     https://gitlab.freedesktop.org/wlroots/wlroots.git \
     "$WLROOTS_VERSION" \
@@ -136,6 +140,7 @@ clone_at_tag \
     "$WLR_RANDR_VERSION" \
     "$SOURCE_ROOT/wlr-randr"
 
+set_build_report_stage wlroots
 printf 'Building wlroots %s...\n' "$WLROOTS_VERSION"
 setup_build_directory "$SOURCE_ROOT/wlroots" \
     --prefix="$PRIVATE_PREFIX" \
@@ -165,6 +170,7 @@ fi
 export PKG_CONFIG_PATH="$PRIVATE_PREFIX/lib/pkgconfig"
 export LD_LIBRARY_PATH="$PRIVATE_PREFIX/lib"
 
+set_build_report_stage cage
 printf 'Building Cage %s...\n' "$CAGE_VERSION"
 setup_build_directory "$SOURCE_ROOT/cage" \
     --prefix="$PRIVATE_PREFIX" \
@@ -175,6 +181,7 @@ setup_build_directory "$SOURCE_ROOT/cage" \
 meson compile -C "$SOURCE_ROOT/cage/build-private"
 meson install -C "$SOURCE_ROOT/cage/build-private"
 
+set_build_report_stage wlr-randr
 printf 'Building wlr-randr %s...\n' "$WLR_RANDR_VERSION"
 setup_build_directory "$SOURCE_ROOT/wlr-randr" \
     --prefix="$PRIVATE_PREFIX" \
@@ -193,6 +200,7 @@ if [[ -e "$BUNDLE_ROOT" ]]; then
 fi
 archive_incomplete_output "$STAGING_ROOT"
 
+set_build_report_stage bundle-assembly
 install -d \
     "$STAGING_ROOT/bin" \
     "$STAGING_ROOT/lib" \
@@ -205,6 +213,9 @@ install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env
 install -m 0755 \
     "$SCRIPT_DIR/check-bundle-target.sh" \
     "$STAGING_ROOT/tools/check-bundle-target.sh"
+install -m 0755 \
+    "$SCRIPT_DIR/compatibility-report.sh" \
+    "$STAGING_ROOT/tools/compatibility-report.sh"
 install -m 0644 \
     "$SCRIPT_DIR/lib/target-fingerprint.sh" \
     "$STAGING_ROOT/tools/target-fingerprint.sh"
@@ -218,6 +229,7 @@ cp "$SOURCE_ROOT/wlr-randr/LICENSE" "$STAGING_ROOT/licenses/wlr-randr.txt"
 # Build-only lookup paths must not influence runtime verification. Cage must
 # resolve wlroots through its relative RUNPATH from the staged bundle.
 unset LD_LIBRARY_PATH PKG_CONFIG_PATH
+set_build_report_stage bundle-verification
 "$SCRIPT_DIR/verify-private-bundle.sh" "$STAGING_ROOT"
 "$SCRIPT_DIR/check-bundle-target.sh" "$STAGING_ROOT"
 printf 'verified\n' > "$STAGING_ROOT/.verified"

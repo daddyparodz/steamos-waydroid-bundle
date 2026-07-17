@@ -221,6 +221,30 @@ update therefore stops an older bundle from being used silently. Re-run the
 snapshot, build, publish, and Deck install stages for the new `BUILD_ID`; older
 version directories remain available for rollback.
 
+## Diagnostic reports
+
+Compatibility mismatches automatically create a Markdown report on the Deck:
+
+```text
+~/.local/state/steamos-waydroid/reports/
+```
+
+It contains the expected and current SteamOS release, compatibility hashes, a
+package-by-package version diff, an assessment, and suggested commands. Reports
+are created by Deck artifact installation, installer preflight, and Game Mode
+launch checks.
+
+Failures inside `build-private-bundle.sh` create a Fedora-side Markdown report:
+
+```text
+~/steamos-waydroid-personal/out/reports/
+```
+
+It records the failed build stage and command, target fingerprint, repository
+revision, and the last 120 lines of every available Meson log. The terminal
+prints the exact report path when one is written. Deck reports are deliberately
+retained by the reset script so a failed run can still be diagnosed afterward.
+
 ## Full two-machine reset
 
 To delete the entire Fedora build workspace, including the copied SteamOS

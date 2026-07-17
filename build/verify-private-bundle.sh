@@ -19,6 +19,8 @@ BUNDLE_ROOT="${1:-}"
     die "bundle target fingerprint is missing"
 [[ -x "$BUNDLE_ROOT/tools/check-bundle-target.sh" ]] || \
     die "bundle target checker is missing"
+[[ -x "$BUNDLE_ROOT/tools/compatibility-report.sh" ]] || \
+    die "bundle compatibility reporter is missing"
 [[ -r "$BUNDLE_ROOT/tools/target-fingerprint.sh" ]] || \
     die "bundle target fingerprint helper is missing"
 

@@ -30,6 +30,7 @@ PRIVATE_BUNDLE=$HOME/.local/opt/steamos-waydroid/current
 PRIVATE_CAGE=$PRIVATE_BUNDLE/bin/cage
 PRIVATE_WLR_RANDR=$PRIVATE_BUNDLE/bin/wlr-randr
 PRIVATE_TARGET_CHECK=$PRIVATE_BUNDLE/tools/check-bundle-target.sh
+PRIVATE_COMPATIBILITY_REPORT=$PRIVATE_BUNDLE/tools/compatibility-report.sh
 PRIVATE_TARGET_ALLOW=$HOME/.local/opt/steamos-waydroid/allow-target-mismatch
 
 # android TV builds
@@ -46,7 +47,9 @@ echo script version: $SCRIPT_VERSION_SHA
 # The private compositor bundle must already be deployed and verified before
 # this installer performs any privileged SteamOS integration.
 if [ ! -x "$PRIVATE_CAGE" ] || [ ! -x "$PRIVATE_WLR_RANDR" ] || \
-	[ ! -x "$PRIVATE_TARGET_CHECK" ] || [ ! -f "$PRIVATE_BUNDLE/.verified" ]
+	[ ! -x "$PRIVATE_TARGET_CHECK" ] || \
+	[ ! -x "$PRIVATE_COMPATIBILITY_REPORT" ] || \
+	[ ! -f "$PRIVATE_BUNDLE/.verified" ]
 then
 	echo Private Cage bundle is missing or unverified.
 	echo Expected bundle: $PRIVATE_BUNDLE
@@ -62,7 +65,10 @@ then
 fi
 if ! "$PRIVATE_TARGET_CHECK" "${target_check_args[@]}"
 then
+	report_file="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid/reports/$(date -u +%Y%m%dT%H%M%SZ)-compatibility.md"
+	"$PRIVATE_COMPATIBILITY_REPORT" "$PRIVATE_BUNDLE" "$report_file" || true
 	echo Private Cage bundle was built for a different SteamOS target.
+	echo Compatibility report: "$report_file"
 	echo Build, publish, and install a bundle for the current SteamOS build first.
 	exit 1
 fi

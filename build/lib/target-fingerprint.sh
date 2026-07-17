@@ -101,7 +101,7 @@ SUGGESTED_BUNDLE_VERSION=$suggested
 EOF
 }
 
-if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+if [[ ${BASH_SOURCE[0]:-} == "$0" || ${FINGERPRINT_RUN_MAIN:-} == 1 ]]; then
     set -Eeuo pipefail
     IFS=$'\n\t'
     [[ ${1:-} == collect ]] || {

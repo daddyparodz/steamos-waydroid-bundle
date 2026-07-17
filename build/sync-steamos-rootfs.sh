@@ -25,14 +25,27 @@ ssh "$DECK_HOST" 'test "$(id -un)" = deck'
 [[ "$BUNDLE_REVISION" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "unsafe BUNDLE_REVISION: $BUNDLE_REVISION"
 printf 'Capturing the target SteamOS and userspace ABI fingerprint...\n'
+fingerprint_capture="$(mktemp "$BUILD_WORK_ROOT/.target-fingerprint.XXXXXX")"
+trap 'rm -f -- "$fingerprint_capture"' EXIT
 ssh "$DECK_HOST" \
-    "WLROOTS_VERSION='$WLROOTS_VERSION' BUNDLE_REVISION='$BUNDLE_REVISION' bash -s -- collect" \
+    "FINGERPRINT_RUN_MAIN=1 WLROOTS_VERSION='$WLROOTS_VERSION' BUNDLE_REVISION='$BUNDLE_REVISION' bash -s -- collect" \
     < "$SCRIPT_DIR/lib/target-fingerprint.sh" \
-    > "$TARGET_FINGERPRINT_FILE"
+    > "$fingerprint_capture"
 suggested_bundle_version="$(awk -F= \
     '$1 == "SUGGESTED_BUNDLE_VERSION" {print $2; exit}' \
-    "$TARGET_FINGERPRINT_FILE")"
-[[ -n "$suggested_bundle_version" ]] || die "captured target fingerprint is incomplete"
+    "$fingerprint_capture")"
+if [[ -z "$suggested_bundle_version" ]]; then
+    printf 'Captured fingerprint output follows:\n' >&2
+    if [[ -s "$fingerprint_capture" ]]; then
+        sed -n '1,80p' "$fingerprint_capture" >&2
+    else
+        printf '  (no output was returned by the Deck)\n' >&2
+    fi
+    die "captured target fingerprint is incomplete (missing SUGGESTED_BUNDLE_VERSION)"
+fi
+install -m 0644 "$fingerprint_capture" "$TARGET_FINGERPRINT_FILE"
+rm -f -- "$fingerprint_capture"
+trap - EXIT
 printf 'Target bundle version: %s\n' "$suggested_bundle_version"
 target_environment_id="$(awk -F= \
     '$1 == "TARGET_ENVIRONMENT_ID" {print $2; exit}' \

@@ -120,33 +120,57 @@ The bundle will be available at:
 ~/steamos-waydroid-personal/out/personal-1/
 ```
 
-## 5. Verify again on the Deck
+## 5. Publish the private artifact on Fedora
 
-Deploy, verify, and activate the versioned bundle with:
-
-```bash
-build/deploy-private-bundle.sh
-```
-
-The script uploads through a staging directory, runs the ELF verifier against
-the real SteamOS host, and switches `current` only after verification passes.
-Version directories are treated as immutable: if the configured version
-already exists on the Deck, it is verified in place rather than overwritten.
-Choose a new `BUNDLE_VERSION` in `.build-config.env` for a new build.
-
-## 6. Deploy the personal installer
-
-After the private bundle passes Deck verification, deploy the committed
-personal installer revision from Fedora:
+Package the verified directory as an immutable archive plus a SHA-256 file:
 
 ```bash
-build/deploy-personal-installer.sh
+build/publish-private-bundle.sh
 ```
 
-The script uses `git archive`, so local configuration, the fingerprint, Git
-metadata, and other untracked files are not copied. Installer revisions are
-stored under the deck user's home directory and activated through a `current`
-symlink. The script refuses to deploy tracked, uncommitted changes.
+The output is placed under `PUBLISH_ROOT`, which defaults to
+`~/steamos-waydroid-personal/publish`. Source code remains in Git; target-built
+binaries remain in this separate artifact store.
+
+## 6. Clone the source on the Deck
+
+Clone the Fedora Git checkout over SSH. Later, the same checkout can use a
+GitHub remote without changing the Deck-side build artifact workflow:
+
+```bash
+git clone \
+    --branch personal-safe-architecture \
+    --single-branch \
+    fedora-build:/home/paulwork/WORK/UniStore/Codes/SteamOS-Waydroid-Installer \
+    ~/steamos-waydroid-personal-installer
+```
+
+## 7. Pull, verify and activate the artifact on the Deck
+
+From the Deck checkout:
+
+```bash
+cd ~/steamos-waydroid-personal-installer
+cp build/deck-config.example.env .deck-config.env
+```
+
+The default `ARTIFACT_SOURCE` uses the `fedora-build` SSH alias and the default
+Fedora publish directory. Adjust it if either differs, then run:
+
+```bash
+build/install-private-bundle-on-deck.sh
+```
+
+The Deck pulls the archive, checks its SHA-256 file, rejects unsafe archive
+paths, extracts through a staging directory, runs the ELF verifier against the
+real SteamOS host, and switches `current` only after verification passes.
+Version directories are immutable. Choose a new `BUNDLE_VERSION` for a new
+build. `ARTIFACT_SOURCE` may later be an HTTPS GitHub Release directory.
+
+The older `deploy-private-bundle.sh` remains available as a Fedora-initiated
+push helper, but it is not part of this separated personal workflow.
+
+## 8. Run the installer locally
 
 The installer itself must be started locally from Konsole in SteamOS Desktop
 Mode so graphical prompts and Steam shortcut creation use the real desktop
@@ -156,3 +180,23 @@ session:
 cd ~/steamos-waydroid-personal-installer
 ./steamos-waydroid-installer.sh
 ```
+
+## Full two-machine reset
+
+To delete the entire Fedora build workspace, including the copied SteamOS
+rootfs, sources, output and published artifacts:
+
+```bash
+build/reset-fedora-build.sh --include-config
+```
+
+This retains the Fedora Git checkout and SSH configuration. On the Deck, exit
+Steam completely and run:
+
+```bash
+./reset-personal-install.sh --full-process
+```
+
+Full-process mode removes Waydroid, Android data, Steam shortcuts and artwork,
+the private bundle, and the Deck Git checkout. It retains SSH keys and SSH host
+configuration so the repository can be cloned again.

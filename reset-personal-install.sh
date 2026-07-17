@@ -8,6 +8,14 @@ ANDROID_HOME="$HOME/Android_Waydroid"
 ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
 SHORTCUT_MANAGER="$SCRIPT_DIR/extras/icon.py"
 READONLY_DISABLED=false
+FULL_PROCESS_RESET=false
+
+if [[ ${1:-} == --full-process ]]; then
+    FULL_PROCESS_RESET=true
+elif [[ $# -ne 0 ]]; then
+    printf 'usage: %s [--full-process]\n' "$0" >&2
+    exit 1
+fi
 
 restore_readonly() {
     if [[ "$READONLY_DISABLED" == true ]]; then
@@ -39,15 +47,28 @@ This permanently deletes this installer's Waydroid instance, including:
   - Waydroid packages and installer-owned system integration
   - Waydroid and nested-desktop Steam shortcuts and local artwork
 
-It intentionally keeps:
+By default it intentionally keeps:
   - this Git checkout
   - ~/.local/opt/steamos-waydroid (the verified private Cage bundle)
 
 These retained prerequisites are required to run the personal installer again.
 EOF
 
-read -r -p 'Type DELETE WAYDROID to continue: ' confirmation
-if [[ "$confirmation" != "DELETE WAYDROID" ]]; then
+if [[ "$FULL_PROCESS_RESET" == true ]]; then
+    cat <<'EOF'
+
+Full-process mode also deletes the Git checkout and private Cage bundle so the
+Deck-side clone, artifact pull, verification and activation can all be tested.
+SSH keys and SSH host configuration are retained.
+EOF
+fi
+
+expected_confirmation="DELETE WAYDROID"
+if [[ "$FULL_PROCESS_RESET" == true ]]; then
+    expected_confirmation="DELETE EVERYTHING"
+fi
+read -r -p "Type $expected_confirmation to continue: " confirmation
+if [[ "$confirmation" != "$expected_confirmation" ]]; then
     printf 'Reset cancelled.\n'
     exit 0
 fi
@@ -126,11 +147,23 @@ sudo steamos-readonly enable
 READONLY_DISABLED=false
 trap - EXIT
 
+if [[ "$FULL_PROCESS_RESET" == true ]]; then
+    printf 'Removing Deck-side bootstrap prerequisites...\n'
+    rm -rf -- \
+        "$HOME/.local/opt/steamos-waydroid" \
+        "$HOME/.local/share/steamos-waydroid-installer" \
+        "$HOME/steamos-waydroid-personal-installer"
+fi
+
 cat <<'EOF'
 
 Reset complete.
 
-The Git checkout and verified private Cage bundle were retained. Start Steam
-again, then run steamos-waydroid-installer.sh locally from Desktop Mode to test
-the same path as a new personal installation.
+Start Steam again before running the installer locally from Desktop Mode.
 EOF
+
+if [[ "$FULL_PROCESS_RESET" == true ]]; then
+    printf 'Clone the Git repository again, then pull and install the published bundle.\n'
+else
+    printf 'The Git checkout and verified private Cage bundle were retained.\n'
+fi

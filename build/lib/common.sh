@@ -16,6 +16,7 @@ fi
 
 BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-$HOME/steamos-waydroid-personal}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-personal-1}"
+PUBLISH_ROOT="${PUBLISH_ROOT:-$BUILD_WORK_ROOT/publish}"
 
 die() {
     printf 'error: %s\n' "$*" >&2
@@ -40,4 +41,3 @@ require_steamos_root() {
         die "this build step must run inside the copied SteamOS rootfs"
     [[ $(uname -m) == x86_64 ]] || die "only x86_64 is supported"
 }
-

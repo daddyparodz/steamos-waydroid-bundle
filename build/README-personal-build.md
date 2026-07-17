@@ -31,7 +31,9 @@ build/sync-steamos-rootfs.sh
 ```
 
 The Deck is only read over SSH. A root-owned build root is materialised on the
-Fedora workstation under `BUILD_WORK_ROOT`.
+Fedora workstation under `BUILD_WORK_ROOT`. The rootfs copy is normalised to
+`root:root` ownership for `systemd-nspawn`; the user-owned snapshot remains
+unchanged.
 
 The script obtains the package database location from `pacman-conf DBPath` on
 the Deck instead of assuming `/var/lib/pacman`; immutable SteamOS releases may

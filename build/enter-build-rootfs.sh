@@ -17,6 +17,8 @@ OUTPUT_ROOT="$BUILD_WORK_ROOT/out"
 
 [[ -x "$ROOTFS_ROOT/usr/bin/bash" ]] || \
     die "SteamOS rootfs not found; run build/sync-steamos-rootfs.sh first"
+[[ $(stat -c '%u:%g' "$ROOTFS_ROOT") == 0:0 ]] || \
+    die "SteamOS rootfs must be owned by root; rerun build/sync-steamos-rootfs.sh"
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 
@@ -32,4 +34,3 @@ sudo systemd-nspawn \
     --setenv="HOST_UID=$(id -u)" \
     --setenv="HOST_GID=$(id -g)" \
     /usr/bin/bash
-

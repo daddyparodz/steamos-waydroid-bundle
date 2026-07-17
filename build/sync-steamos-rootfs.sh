@@ -85,6 +85,7 @@ rsync -aH --info=progress2 \
 
 printf 'Materialising the rootfs with root ownership on Fedora...\n'
 sudo rsync -aH "$SNAPSHOT_ROOT/" "$ROOTFS_ROOT/"
+sudo chown -R root:root "$ROOTFS_ROOT"
 
 sudo install -d -m 0755 \
     "$ROOTFS_ROOT/dev" \

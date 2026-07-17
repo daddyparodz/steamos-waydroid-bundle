@@ -204,6 +204,19 @@ def install_artwork(path, shortcut, artwork, icon):
     print(f"Installed local Steam artwork for app {app_id} in {grid}")
 
 
+def remove_artwork(path, shortcut):
+    app_id = shortcut_app_id(shortcut)
+    grid = path.parent / "grid"
+    removed = 0
+    for suffix in ("", "p", "_hero", "_logo", "_icon"):
+        for extension in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+            artwork = grid / f"{app_id}{suffix}{extension}"
+            if artwork.is_file():
+                artwork.unlink()
+                removed += 1
+    return removed
+
+
 def reconcile(home, path, target, artwork=None, icon=None):
     if path is None or not path.is_file():
         print("No shortcuts.vdf found; add the shortcut first.", file=sys.stderr)
@@ -233,9 +246,29 @@ def reconcile(home, path, target, artwork=None, icon=None):
     return 0
 
 
+def remove_target(path, target):
+    if path is None or not path.is_file():
+        print("No shortcuts.vdf found; nothing to remove.")
+        return 0
+
+    data, shortcuts_dict = load_shortcuts(path)
+    shortcuts = [value for value in shortcuts_dict.values() if isinstance(value, dict)]
+    matches = [shortcut for shortcut in shortcuts if is_target(shortcut, target)]
+    if not matches:
+        print(f"No {target} Steam shortcut found; nothing to remove.")
+        return 0
+
+    retained = [shortcut for shortcut in shortcuts if not is_target(shortcut, target)]
+    artwork_removed = sum(remove_artwork(path, shortcut) for shortcut in matches)
+    write_shortcuts(path, data, retained)
+    print(f"Removed {len(matches)} {target} shortcut(s) and {artwork_removed} artwork file(s).")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("has", "reconcile"), nargs="?", default="reconcile")
+    parser.add_argument("action", choices=("has", "reconcile", "remove"), nargs="?",
+                        default="reconcile")
     parser.add_argument("target", choices=tuple(TARGETS), nargs="?", default="waydroid")
     parser.add_argument("--artwork", type=Path)
     parser.add_argument("--icon", type=Path,
@@ -246,6 +279,8 @@ def main():
     path = shortcuts_path(args.home)
     if args.action == "has":
         return 0 if matching_shortcuts(path, args.target) else 1
+    if args.action == "remove":
+        return remove_target(path, args.target)
     return reconcile(args.home, path, args.target, args.artwork, args.icon)
 
 

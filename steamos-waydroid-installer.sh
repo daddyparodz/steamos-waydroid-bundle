@@ -8,7 +8,15 @@ echo YT - 10MinuteSteamDeckGamer
 sleep 2
 
 # define variables here
-SCRIPT_VERSION_SHA=$(git rev-parse --short HEAD)
+if SCRIPT_VERSION_SHA=$(git rev-parse --short HEAD 2> /dev/null)
+then
+	:
+elif [ -r .source-version ]
+then
+	SCRIPT_VERSION_SHA=$(cat .source-version)
+else
+	SCRIPT_VERSION_SHA=personal
+fi
 STEAMOS_VERSION=$(cat /etc/os-release | grep -i version_id | cut -d "=" -f2 | cut -d "." -f1-2)
 BASE_VERSION=3.8
 STEAMOS_BRANCH=$(steamos-select-branch -c)
@@ -18,6 +26,9 @@ WAYDROID_SCRIPT=https://github.com/casualsnek/waydroid_script.git
 WAYDROID_SCRIPT_DIR=$(mktemp -d)/waydroid_script
 FREE_HOME=$(df /home --output=avail | tail -n1)
 ARM_Choice=libhoudini
+PRIVATE_BUNDLE=$HOME/.local/opt/steamos-waydroid/current
+PRIVATE_CAGE=$PRIVATE_BUNDLE/bin/cage
+PRIVATE_WLR_RANDR=$PRIVATE_BUNDLE/bin/wlr-randr
 
 # android TV builds
 ANDROID13_TV_OTA=https://ota.supechicken666.dev
@@ -29,6 +40,16 @@ ANDROID13_IMG=https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer/releas
 ANDROID13_IMG_HASH=aafdd4ef69e8a11d64ba02e881c1697d6a3ee4fa4c1fb97e33abc6da5f4bb6d4
 
 echo script version: $SCRIPT_VERSION_SHA
+
+# The private compositor bundle must already be deployed and verified before
+# this installer performs any privileged SteamOS integration.
+if [ ! -x "$PRIVATE_CAGE" ] || [ ! -x "$PRIVATE_WLR_RANDR" ] || [ ! -f "$PRIVATE_BUNDLE/.verified" ]
+then
+	echo Private Cage bundle is missing or unverified.
+	echo Expected bundle: $PRIVATE_BUNDLE
+	echo Run build/deploy-private-bundle.sh from the Fedora workstation first.
+	exit 1
+fi
 
 # define functions here
 source functions.sh
@@ -92,15 +113,14 @@ echo -e "$current_password\n" | sudo -S firewall-cmd --runtime-to-permanent &> /
 echo -e "$current_password\n" | sudo -S systemctl stop firewalld
 
 # lets install the custom config files
-mkdir -p ~/Android_Waydroid/{config,pacman} &> /dev/null
+mkdir -p ~/Android_Waydroid/config &> /dev/null
 
 # waydroid startup and shutdown scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-startup-scripts /usr/bin/waydroid-startup-scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-shutdown-scripts /usr/bin/waydroid-shutdown-scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-mount /usr/bin/waydroid-mount
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-firewall /usr/bin/waydroid-firewall
-echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-install-cage /usr/bin/waydroid-install-cage
-echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall /usr/bin/waydroid-install-cage
+echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
 
 # custom sudoers file do not ask for sudo for the custom waydroid scripts
 echo -e "$current_password\n" | sudo -S cp extras/zzzzzzzz-waydroid /etc/sudoers.d/zzzzzzzz-waydroid
@@ -109,7 +129,6 @@ echo -e "$current_password\n" | sudo -S chown root:root /etc/sudoers.d/zzzzzzzz-
 # copy waydroid launcher dependencies
 cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh extras/scripts/Waydroid-Updater.sh ~/Android_Waydroid
 cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
-cp -R extras/pacman ~/Android_Waydroid
 
 # waydroid launcher, toolbox and updater
 chmod +x ~/Android_Waydroid/*.sh

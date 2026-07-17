@@ -1,23 +1,30 @@
 #!/bin/bash
 
-# restore the kernel.pid_max to the default value and then delete the temp file created
-sysctl -w kernel.pid_max=$(cat /home/deck/Android_Waydroid/orig_kernel.pid_max)
-rm -f /home/deck/Android_Waydroid/orig_kernel.pid_max
+set -Eeuo pipefail
 
-# reset cage
-cage -- bash -c 'wlr-randr'
+IMAGE=/home/deck/Android_Waydroid/waydroid.img
+PID_MAX_STATE=/home/deck/Android_Waydroid/orig_kernel.pid_max
 
-# stop the waydroid container
-sleep 10
-systemctl stop waydroid-container.service
-systemctl stop firewalld.service
+if [ -r "$PID_MAX_STATE" ]
+then
+	saved_pid_max=$(cat "$PID_MAX_STATE")
+	if [[ "$saved_pid_max" =~ ^[0-9]+$ ]]
+	then
+		sysctl -w "kernel.pid_max=$saved_pid_max" || true
+	fi
+	rm -f "$PID_MAX_STATE"
+fi
 
-# unmount the custom var directory for waydroid
-umount /var/lib/waydroid
-losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)
+systemctl stop waydroid-container.service || true
+systemctl stop firewalld.service || true
 
+if findmnt --mountpoint /var/lib/waydroid > /dev/null
+then
+	umount /var/lib/waydroid || true
+fi
 
-# remove the offending packages
-pacman -R cage wlroots0.18 --noconfirm
-pacman -S libdisplay-info --noconfirm
+while IFS=: read -r loop_device _
+do
+	[ -n "$loop_device" ] && losetup -d "$loop_device" || true
+done < <(losetup -j "$IMAGE")
 

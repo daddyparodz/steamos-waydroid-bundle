@@ -27,7 +27,7 @@ cleanup_exit () {
 	
 	# remove installed packages
 	echo -e "$current_password\n" | sudo -S pacman -R --noconfirm libglibutil libgbinder \
-		python-gbinder waydroid wlroots cage wlr-randr binder_linux-dkms fakeroot debugedit \
+		python-gbinder waydroid binder_linux-dkms fakeroot debugedit \
 		dkms plymouth linux-neptune-$(uname -r | cut -d "-" -f5)-headers &> /dev/null
 	
 	# unmount the custom /var/lib/waydroid
@@ -45,7 +45,7 @@ cleanup_exit () {
 	rm ~/Desktop/Waydroid-Toolbox &> /dev/null
 
 	# delete Android_Waydroid folder and enable the readonly
-	echo -e "$current_password\n" | sudo -S rm -rf ~/Android_Waydroid/*.sh ~/Android_Waydroid{config,pacman} &> /dev/null
+	echo -e "$current_password\n" | sudo -S rm -rf ~/Android_Waydroid/*.sh ~/Android_Waydroid/config &> /dev/null
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable &> /dev/null
 	
 	# re-enable Decky Loader Plugin Loader service

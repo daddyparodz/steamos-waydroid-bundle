@@ -133,3 +133,26 @@ the real SteamOS host, and switches `current` only after verification passes.
 Version directories are treated as immutable: if the configured version
 already exists on the Deck, it is verified in place rather than overwritten.
 Choose a new `BUNDLE_VERSION` in `.build-config.env` for a new build.
+
+## 6. Deploy the personal installer
+
+After the private bundle passes Deck verification, deploy the committed
+personal installer revision from Fedora:
+
+```bash
+build/deploy-personal-installer.sh
+```
+
+The script uses `git archive`, so local configuration, the fingerprint, Git
+metadata, and other untracked files are not copied. Installer revisions are
+stored under the deck user's home directory and activated through a `current`
+symlink. The script refuses to deploy tracked, uncommitted changes.
+
+The installer itself must be started locally from Konsole in SteamOS Desktop
+Mode so graphical prompts and Steam shortcut creation use the real desktop
+session:
+
+```bash
+cd ~/steamos-waydroid-personal-installer
+./steamos-waydroid-installer.sh
+```

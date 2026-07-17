@@ -127,20 +127,22 @@ sudo rm -f -- \
 sudo rm -rf -- /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra
 
 printf 'Removing Android data and per-user integration...\n'
-rm -f -- \
+sudo rm -f -- \
     "$HOME/Desktop/Waydroid-Toolbox" \
     "$HOME/Desktop/Waydroid-Updater" \
     "$HOME/.local/share/kio/servicemenus/open_as_root.desktop" \
     "$SCRIPT_DIR/extras/waydroid.img" \
     "$SCRIPT_DIR/logfile"
-rm -rf -- \
+# Waydroid and its privileged helpers can leave root-owned files below these
+# user directories. Keep the targets explicit, but remove them as root.
+sudo rm -rf -- \
     "$ANDROID_HOME" \
     "$HOME/waydroid" \
     "$HOME/.local/share/waydroid"
 
 applications="$HOME/.local/share/applications"
 if [[ -d "$applications" ]]; then
-    find "$applications" -maxdepth 1 -type f -name 'waydroid*.desktop' -delete
+    sudo find "$applications" -maxdepth 1 -type f -name 'waydroid*.desktop' -delete
 fi
 
 sudo steamos-readonly enable
@@ -149,7 +151,7 @@ trap - EXIT
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     printf 'Removing Deck-side bootstrap prerequisites...\n'
-    rm -rf -- \
+    sudo rm -rf -- \
         "$HOME/.local/opt/steamos-waydroid" \
         "$HOME/.local/share/steamos-waydroid-installer" \
         "$HOME/steamos-waydroid-personal-installer"

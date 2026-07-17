@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+PROJECT_ROOT="$HOME/.local/opt/steamos-waydroid"
+BUILDS_ROOT="$PROJECT_ROOT/builds"
+CURRENT_LINK="$PROJECT_ROOT/current"
+TARGET_MISMATCH_ALLOW_FILE="$PROJECT_ROOT/allow-target-mismatch"
+
+bundle_matches_current_target() {
+	local candidate="$1"
+	[[ -d "$candidate" ]] || return 1
+	[[ -f "$candidate/.verified" ]] || return 1
+	[[ -x "$candidate/bin/cage" ]] || return 1
+	[[ -x "$candidate/bin/wlr-randr" ]] || return 1
+	[[ -x "$candidate/tools/check-bundle-target.sh" ]] || return 1
+	"$candidate/tools/check-bundle-target.sh" "$candidate" >/dev/null 2>&1
+}
+
+activate_bundle() {
+	local candidate="$1"
+	local bundle_version
+	bundle_version="$(basename -- "$candidate")"
+	[[ "$bundle_version" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+	(
+		cd "$PROJECT_ROOT"
+		ln -sfn "builds/$bundle_version" current
+	)
+	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
+	printf 'Activated private bundle for this SteamOS target: %s\n' "$bundle_version"
+}
+
+if bundle_matches_current_target "$CURRENT_LINK"; then
+	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
+	printf 'Current private bundle matches this SteamOS target: %s\n' \
+		"$(basename -- "$(readlink -f "$CURRENT_LINK")")"
+	exit 0
+fi
+
+while IFS= read -r candidate; do
+	if bundle_matches_current_target "$candidate"; then
+		activate_bundle "$candidate"
+		exit 0
+	fi
+done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+
+printf 'error: no installed private bundle matches the running SteamOS target\n' >&2
+exit 1

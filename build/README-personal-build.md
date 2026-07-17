@@ -232,6 +232,13 @@ installed, it downloads the catalog entry for that exact target. Re-run the
 snapshot, build and publish stages when no matching artifact exists; older
 version directories remain available for rollback.
 
+The installed Game Mode launcher also performs local-only selection before
+every launch. Switching between SteamOS A/B images therefore reactivates an
+already-installed matching bundle without rerunning the main installer or
+requiring network access. It never selects an allowed-mismatch bundle and does
+not download artifacts; if no local match exists, run the installer or the
+Deck-side bundle installation command from Desktop Mode.
+
 ## Diagnostic reports
 
 Compatibility mismatches automatically create a Markdown report on the Deck:

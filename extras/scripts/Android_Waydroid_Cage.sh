@@ -3,6 +3,17 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_BUNDLE_SELECTOR="$SCRIPT_DIR/select-private-bundle"
+if [ -x "$LOCAL_BUNDLE_SELECTOR" ] && \
+	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1)
+then
+	kdialog --error "No installed private Cage bundle matches this SteamOS build.
+
+$SELECTOR_OUTPUT
+
+Run the personal installer from Desktop Mode to fetch or repair the matching bundle."
+	exit 1
+fi
 BUNDLE="$HOME/.local/opt/steamos-waydroid/current"
 CAGE="$BUNDLE/bin/cage"
 WLR_RANDR="$BUNDLE/bin/wlr-randr"

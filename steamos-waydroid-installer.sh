@@ -157,13 +157,14 @@ echo -e "$current_password\n" | sudo -S cp extras/zzzzzzzz-waydroid /etc/sudoers
 echo -e "$current_password\n" | sudo -S chown root:root /etc/sudoers.d/zzzzzzzz-waydroid
 
 # copy waydroid launcher dependencies
-cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh extras/scripts/Waydroid-Updater.sh ~/Android_Waydroid
+cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
+	extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
 cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
 cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
 cp android.jpg ~/Android_Waydroid/steam-artwork.jpg
 
 # waydroid launcher, toolbox and updater
-chmod +x ~/Android_Waydroid/*.sh
+chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
 
 # Dolphin File Manager extension for root access
 mkdir -p ~/.local/share/kio/servicemenus

@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 
-for command_name in find readelf ldd file; do
+for command_name in find readelf ldd file realpath; do
     require_command "$command_name"
 done
 
@@ -49,8 +49,11 @@ fi
 
 resolved_wlroots="$(ldd "$BUNDLE_ROOT/bin/cage" | \
     awk '/libwlroots-0.18/{print $3; exit}')"
+[[ -n "$resolved_wlroots" ]] || die "Cage did not report a resolved wlroots path"
+resolved_wlroots="$(realpath -e -- "$resolved_wlroots")"
+bundle_library_root="$(realpath -e -- "$BUNDLE_ROOT/lib")"
 case "$resolved_wlroots" in
-    "$BUNDLE_ROOT"/lib/*) ;;
+    "$bundle_library_root"/*) ;;
     *) die "Cage did not resolve wlroots from its private bundle" ;;
 esac
 

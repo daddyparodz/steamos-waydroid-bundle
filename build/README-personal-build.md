@@ -33,6 +33,10 @@ build/sync-steamos-rootfs.sh
 The Deck is only read over SSH. A root-owned build root is materialised on the
 Fedora workstation under `BUILD_WORK_ROOT`.
 
+The script obtains the package database location from `pacman-conf DBPath` on
+the Deck instead of assuming `/var/lib/pacman`; immutable SteamOS releases may
+store it elsewhere. The same absolute path is reproduced in the copied rootfs.
+
 The sync deliberately excludes root-only CUPS, NFS, D-Bus, SSH, ModemManager,
 and SteamOS factory helper files which the `deck` account cannot read. None is
 part of the compiler, linker, or Cage/wlroots runtime ABI. If an interrupted

@@ -22,11 +22,23 @@ ROOTFS_ROOT="$BUILD_WORK_ROOT/rootfs"
 mkdir -p \
     "$SNAPSHOT_ROOT/usr" \
     "$SNAPSHOT_ROOT/etc" \
-    "$SNAPSHOT_ROOT/var/lib/pacman" \
     "$ROOTFS_ROOT"
 
 printf 'Checking SSH access to %s...\n' "$DECK_HOST"
 ssh "$DECK_HOST" 'test "$(id -un)" = deck'
+
+printf 'Detecting the SteamOS pacman database path...\n'
+PACMAN_DB_PATH="$(ssh "$DECK_HOST" 'pacman-conf DBPath' | head -n 1)"
+PACMAN_DB_PATH="${PACMAN_DB_PATH%/}"
+case "$PACMAN_DB_PATH" in
+    /var/*|/usr/*) ;;
+    *) die "Deck returned an unsafe or unsupported pacman DBPath: $PACMAN_DB_PATH" ;;
+esac
+if [[ "$PACMAN_DB_PATH" == *'/../'* || "$PACMAN_DB_PATH" == */.. ]]; then
+    die "Deck returned an unsafe pacman DBPath: $PACMAN_DB_PATH"
+fi
+mkdir -p "$SNAPSHOT_ROOT$PACMAN_DB_PATH"
+printf 'Pacman database: %s\n' "$PACMAN_DB_PATH"
 
 printf 'Copying /usr from the Deck (read-only source)...\n'
 rsync -aH --info=progress2 \
@@ -43,8 +55,8 @@ rsync -aH --info=progress2 \
 
 printf 'Copying the pacman database from the Deck...\n'
 rsync -aH --info=progress2 \
-    "$DECK_HOST:/var/lib/pacman/" \
-    "$SNAPSHOT_ROOT/var/lib/pacman/"
+    "$DECK_HOST:$PACMAN_DB_PATH/" \
+    "$SNAPSHOT_ROOT$PACMAN_DB_PATH/"
 
 printf 'Copying only build-relevant system configuration from the Deck...\n'
 rsync -aH --info=progress2 \

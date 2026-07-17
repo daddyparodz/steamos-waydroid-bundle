@@ -122,26 +122,14 @@ The bundle will be available at:
 
 ## 5. Verify again on the Deck
 
-Copy the bundle into a versioned user directory:
+Deploy, verify, and activate the versioned bundle with:
 
 ```bash
-ssh "$DECK_HOST" 'mkdir -p ~/.local/opt/steamos-waydroid/builds/personal-1'
-
-rsync -a \
-    ~/steamos-waydroid-personal/out/personal-1/ \
-    "$DECK_HOST:~/.local/opt/steamos-waydroid/builds/personal-1/"
-
-ssh "$DECK_HOST" \
-    'ln -sfn builds/personal-1 ~/.local/opt/steamos-waydroid/current'
+build/deploy-private-bundle.sh
 ```
 
-Run the verifier against the real Deck host before changing the launcher:
-
-```bash
-rsync -a build/verify-private-bundle.sh build/lib \
-    "$DECK_HOST:~/steamos-waydroid-verify/"
-
-ssh "$DECK_HOST" \
-    '~/steamos-waydroid-verify/verify-private-bundle.sh \
-     ~/.local/opt/steamos-waydroid/current'
-```
+The script uploads through a staging directory, runs the ELF verifier against
+the real SteamOS host, and switches `current` only after verification passes.
+Version directories are treated as immutable: if the configured version
+already exists on the Deck, it is verified in place rather than overwritten.
+Choose a new `BUNDLE_VERSION` in `.build-config.env` for a new build.

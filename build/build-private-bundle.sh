@@ -13,6 +13,26 @@ for command_name in git meson ninja patchelf pkg-config readelf ldd; do
     require_command "$command_name"
 done
 
+required_system_headers=(
+    stdio.h
+    stdint.h
+    features.h
+    sys/eventfd.h
+    linux/dma-buf.h
+)
+
+missing_system_headers=()
+for header in "${required_system_headers[@]}"; do
+    if [[ ! -r "/usr/include/$header" ]]; then
+        missing_system_headers+=("$header")
+    fi
+done
+if (( ${#missing_system_headers[@]} > 0 )); then
+    printf 'Missing system headers in the minified SteamOS rootfs:\n' >&2
+    printf '  %s\n' "${missing_system_headers[@]}" >&2
+    die "reinstall the same glibc and linux-api-headers versions in the copied rootfs"
+fi
+
 required_pkg_config_dependencies=(
     wayland-server
     libdrm

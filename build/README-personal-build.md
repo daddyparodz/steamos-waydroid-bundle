@@ -70,6 +70,7 @@ package versions:
 
 ```bash
 pacman -S \
+    glibc linux-api-headers \
     wayland libdisplay-info libdrm libxkbcommon pixman mesa libglvnd \
     systemd-libs seatd libinput hwdata libxcb xcb-util-renderutil \
     libffi libxau libxdmcp xorgproto
@@ -77,7 +78,9 @@ pacman -S \
 
 Do not use `--needed` for this command; these packages are already registered
 as installed and must be unpacked again. Review the transaction and continue
-only if it reinstalls the same versions. Cancel if it proposes version changes.
+only if it reinstalls the same versions with a zero net upgrade. This includes
+glibc and Linux API headers because SteamOS removes their standard C headers
+from the deployed image. Cancel if pacman proposes any version changes.
 
 Confirm the key metadata before building:
 

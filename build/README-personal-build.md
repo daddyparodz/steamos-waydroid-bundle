@@ -36,7 +36,9 @@ Fedora workstation under `BUILD_WORK_ROOT`.
 The sync deliberately excludes root-only CUPS, NFS, D-Bus, SSH, ModemManager,
 and SteamOS factory helper files which the `deck` account cannot read. None is
 part of the compiler, linker, or Cage/wlroots runtime ABI. If an interrupted
-sync is rerun, rsync reuses the files already copied.
+sync is rerun, rsync reuses the files already copied. From `/etc`, it copies
+only the package/build, linker, user/group, DNS, and public CA configuration
+needed inside the build root; it does not attempt to copy Deck secrets.
 
 ## 3. Enter and prepare the copied rootfs
 

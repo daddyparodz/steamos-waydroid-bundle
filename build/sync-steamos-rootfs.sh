@@ -46,15 +46,28 @@ rsync -aH --info=progress2 \
     "$DECK_HOST:/var/lib/pacman/" \
     "$SNAPSHOT_ROOT/var/lib/pacman/"
 
-printf 'Copying readable system configuration from the Deck...\n'
+printf 'Copying only build-relevant system configuration from the Deck...\n'
 rsync -aH --info=progress2 \
-    --exclude='/shadow' \
-    --exclude='/shadow-' \
-    --exclude='/gshadow' \
-    --exclude='/gshadow-' \
-    --exclude='/sudoers' \
-    --exclude='/sudoers.d/' \
     --exclude='/pacman.d/gnupg/' \
+    --include='/os-release' \
+    --include='/arch-release' \
+    --include='/passwd' \
+    --include='/group' \
+    --include='/nsswitch.conf' \
+    --include='/hosts' \
+    --include='/hostname' \
+    --include='/resolv.conf' \
+    --include='/localtime' \
+    --include='/mtab' \
+    --include='/pacman.conf' \
+    --include='/pacman.d/***' \
+    --include='/makepkg.conf' \
+    --include='/makepkg.conf.d/***' \
+    --include='/ld.so.conf' \
+    --include='/ld.so.conf.d/***' \
+    --include='/ssl/certs/***' \
+    --include='/ca-certificates/***' \
+    --exclude='*' \
     "$DECK_HOST:/etc/" \
     "$SNAPSHOT_ROOT/etc/"
 

@@ -129,6 +129,8 @@ echo -e "$current_password\n" | sudo -S chown root:root /etc/sudoers.d/zzzzzzzz-
 # copy waydroid launcher dependencies
 cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh extras/scripts/Waydroid-Updater.sh ~/Android_Waydroid
 cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
+cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
+cp android.jpg ~/Android_Waydroid/steam-artwork.jpg
 
 # waydroid launcher, toolbox and updater
 chmod +x ~/Android_Waydroid/*.sh
@@ -297,18 +299,28 @@ Icon=application-default-icon
 EOF
 
 	chmod +x "$TMP_DESKTOP"
-	steamos-add-to-steam "$TMP_DESKTOP"
-	sleep 3
+	if python3 "$WORKING_DIR/extras/icon.py" has waydroid
+	then
+		echo Existing Waydroid shortcut found. It will be updated.
+	else
+		steamos-add-to-steam "$TMP_DESKTOP"
+		sleep 3
+	fi
 	rm -f "$TMP_DESKTOP"
-	echo Waydroid shortcut has been added to Game Mode.
-
-	# create icon for the Waydroid shortcut
-	python3 extras/icon.py
+	python3 "$WORKING_DIR/extras/icon.py" reconcile waydroid \
+		--artwork "$WORKING_DIR/android.jpg" --icon "$icon_path"
+	echo Waydroid shortcut and local artwork are ready in Game Mode.
 
 	# add steamos-nested-desktop to Game Mode. This can be used when doing Waydroid maintenance.
-	steamos-add-to-steam /usr/bin/steamos-nested-desktop  &> /dev/null
-	sleep 3
-	echo steamos-nested-desktop shortcut has been added to Game Mode.
+	if python3 "$WORKING_DIR/extras/icon.py" has nested-desktop
+	then
+		echo Existing steamos-nested-desktop shortcut found. It will be kept.
+	else
+		steamos-add-to-steam /usr/bin/steamos-nested-desktop &> /dev/null
+		sleep 3
+	fi
+	python3 "$WORKING_DIR/extras/icon.py" reconcile nested-desktop
+	echo steamos-nested-desktop shortcut is ready in Game Mode.
 
 	# all done lets re-enable the readonly
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable

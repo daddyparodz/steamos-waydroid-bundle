@@ -173,9 +173,17 @@ SERVICE_Choice=$(zenity --width 600 --height 220 --list --radiolist --multiple -
 
 elif [ "$Choice" == "LAUNCHER" ]
 then
-	steamos-add-to-steam /home/deck/Android_Waydroid/Android_Waydroid_Cage.sh
-	sleep 5
-	zenity --warning --title "Waydroid Toolbox" --text "Android Waydroid Cage launcher has been added to Game Mode!" --width 450 --height 75
+	SHORTCUT_MANAGER="$HOME/Android_Waydroid/steam-shortcuts.py"
+	if python3 "$SHORTCUT_MANAGER" has waydroid
+	then
+		echo Existing Waydroid shortcut found. It will be updated.
+	else
+		steamos-add-to-steam "$HOME/Android_Waydroid/Android_Waydroid_Cage.sh"
+		sleep 5
+	fi
+	python3 "$SHORTCUT_MANAGER" reconcile waydroid \
+		--artwork "$HOME/Android_Waydroid/steam-artwork.jpg"
+	zenity --warning --title "Waydroid Toolbox" --text "One Android Waydroid launcher and its local artwork are ready in Game Mode!" --width 500 --height 75
 
 elif [ "$Choice" == "UNINSTALL" ]
 then

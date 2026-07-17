@@ -11,21 +11,43 @@ require_non_root
 require_command rsync
 require_command ssh
 require_command sudo
+require_command sha256sum
 
 DECK_HOST="${DECK_HOST:-}"
 [[ -n "$DECK_HOST" ]] || \
     die "set DECK_HOST in $BUILD_CONFIG_FILE (see build/config.example.env)"
 
-SNAPSHOT_ROOT="$BUILD_WORK_ROOT/snapshot"
-ROOTFS_ROOT="$BUILD_WORK_ROOT/rootfs"
+mkdir -p "$BUILD_WORK_ROOT"
 
+printf 'Checking SSH access to %s...\n' "$DECK_HOST"
+ssh "$DECK_HOST" 'test "$(id -un)" = deck'
+
+[[ "$BUNDLE_REVISION" =~ ^[A-Za-z0-9._-]+$ ]] || \
+    die "unsafe BUNDLE_REVISION: $BUNDLE_REVISION"
+printf 'Capturing the target SteamOS and userspace ABI fingerprint...\n'
+ssh "$DECK_HOST" \
+    "WLROOTS_VERSION='$WLROOTS_VERSION' BUNDLE_REVISION='$BUNDLE_REVISION' bash -s -- collect" \
+    < "$SCRIPT_DIR/lib/target-fingerprint.sh" \
+    > "$TARGET_FINGERPRINT_FILE"
+suggested_bundle_version="$(awk -F= \
+    '$1 == "SUGGESTED_BUNDLE_VERSION" {print $2; exit}' \
+    "$TARGET_FINGERPRINT_FILE")"
+[[ -n "$suggested_bundle_version" ]] || die "captured target fingerprint is incomplete"
+printf 'Target bundle version: %s\n' "$suggested_bundle_version"
+target_environment_id="$(awk -F= \
+    '$1 == "TARGET_ENVIRONMENT_ID" {print $2; exit}' \
+    "$TARGET_FINGERPRINT_FILE")"
+[[ -n "$target_environment_id" ]] || die "captured target environment ID is missing"
+
+TARGET_WORK_ROOT="$TARGETS_ROOT/$target_environment_id"
+SNAPSHOT_ROOT="$TARGET_WORK_ROOT/snapshot"
+ROOTFS_ROOT="$TARGET_WORK_ROOT/rootfs"
+TARGET_VERSION_FINGERPRINT="$TARGET_WORK_ROOT/target-fingerprint.env"
 mkdir -p \
     "$SNAPSHOT_ROOT/usr" \
     "$SNAPSHOT_ROOT/etc" \
     "$ROOTFS_ROOT"
-
-printf 'Checking SSH access to %s...\n' "$DECK_HOST"
-ssh "$DECK_HOST" 'test "$(id -un)" = deck'
+install -m 0644 "$TARGET_FINGERPRINT_FILE" "$TARGET_VERSION_FINGERPRINT"
 
 printf 'Detecting the SteamOS pacman database path...\n'
 PACMAN_DB_PATH="$(ssh "$DECK_HOST" 'pacman-conf DBPath' | head -n 1)"
@@ -110,4 +132,6 @@ sudo ln -sfn usr/lib "$ROOTFS_ROOT/lib"
 sudo ln -sfn usr/lib "$ROOTFS_ROOT/lib64"
 
 printf '\nSteamOS build root created at:\n  %s\n' "$ROOTFS_ROOT"
+printf 'Target fingerprint created at:\n  %s\n' "$TARGET_FINGERPRINT_FILE"
+printf 'Versioned target environment:\n  %s\n' "$TARGET_WORK_ROOT"
 printf 'The live Steam Deck was only read over SSH.\n'

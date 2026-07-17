@@ -11,6 +11,8 @@ require_non_root
 require_command rsync
 require_command ssh
 
+resolve_bundle_version
+
 DECK_HOST="${DECK_HOST:-}"
 [[ -n "$DECK_HOST" ]] || \
     die "set DECK_HOST in $BUILD_CONFIG_FILE (see build/config.example.env)"
@@ -64,4 +66,3 @@ ssh "$DECK_HOST" "\
 
 printf '\nPrivate bundle deployed and activated:\n'
 printf '  %s:%s\n' "$DECK_HOST" "~/$REMOTE_BUILD"
-

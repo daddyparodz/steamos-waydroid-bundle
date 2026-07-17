@@ -20,7 +20,10 @@ From the repository root on Fedora:
 cp build/config.example.env .build-config.env
 ```
 
-Edit `DECK_HOST` in `.build-config.env`. The local file is ignored by Git.
+Edit `DECK_HOST` in `.build-config.env`. Keep `BUNDLE_VERSION="auto"` so the
+target SteamOS release determines the immutable bundle name. Increment
+`BUNDLE_REVISION` only when rebuilding changed sources for the same SteamOS
+build. The local configuration file is ignored by Git.
 
 ## 2. Copy the SteamOS userspace
 
@@ -34,6 +37,23 @@ The Deck is only read over SSH. A root-owned build root is materialised on the
 Fedora workstation under `BUILD_WORK_ROOT`. The rootfs copy is normalised to
 `root:root` ownership for `systemd-nspawn`; the user-owned snapshot remains
 unchanged.
+
+Before copying, the script captures SteamOS `VERSION_ID`, `BUILD_ID`, the
+kernel, and the installed versions of the userspace packages Cage/wlroots link
+against, including glibc, Wayland, libdisplay-info, libdrm, Mesa, pixman,
+libglvnd, libudev/systemd, libinput, libxkbcommon, seatd, hwdata, and XCB. It
+stores their deterministic compatibility hash in `target-fingerprint.env` and
+derives a name such as:
+
+```text
+steamos-3.8.16-b20260716.1-wlroots0.18.2-r1
+```
+
+Each release/ABI target gets an independent Fedora snapshot and rootfs under
+`BUILD_WORK_ROOT/targets/<SteamOS-build-and-ABI>/`. A later 3.8.17 sync
+therefore cannot mix its package database or development payloads into the
+retained 3.8.16 environment. Incrementing only `BUNDLE_REVISION` reuses the
+same target rootfs rather than duplicating it.
 
 The script obtains the package database location from `pacman-conf DBPath` on
 the Deck instead of assuming `/var/lib/pacman`; immutable SteamOS releases may
@@ -114,11 +134,15 @@ Exit the container when finished:
 exit
 ```
 
-The bundle will be available at:
+The bundle will be available under its derived target name, for example:
 
 ```text
-~/steamos-waydroid-personal/out/personal-1/
+~/steamos-waydroid-personal/out/steamos-3.8.16-b20260716.1-wlroots0.18.2-r1/
 ```
+
+It contains the captured target fingerprint and a checker used again on the
+real Deck. A different SteamOS `BUILD_ID` creates a separate directory instead
+of replacing an earlier working build.
 
 ## 5. Publish the private artifact on Fedora
 
@@ -131,6 +155,9 @@ build/publish-private-bundle.sh
 The output is placed under `PUBLISH_ROOT`, which defaults to
 `~/steamos-waydroid-personal/publish`. Source code remains in Git; target-built
 binaries remain in this separate artifact store.
+`latest.manifest` points Deck-side `BUNDLE_VERSION="auto"` at the most recently
+published immutable artifact; versioned manifests remain available for
+rollback.
 
 ## 6. Clone the source on the Deck
 
@@ -163,9 +190,17 @@ build/install-private-bundle-on-deck.sh
 
 The Deck pulls the archive, checks its SHA-256 file, rejects unsafe archive
 paths, extracts through a staging directory, runs the ELF verifier against the
-real SteamOS host, and switches `current` only after verification passes.
-Version directories are immutable. Choose a new `BUNDLE_VERSION` for a new
-build. `ARTIFACT_SOURCE` may later be an HTTPS GitHub Release directory.
+real SteamOS host, compares the embedded release and ABI fingerprint, and
+switches `current` only after every check passes. Version directories are
+immutable. A target mismatch is rejected by default. For a deliberate
+compatibility experiment only, use:
+
+```bash
+build/install-private-bundle-on-deck.sh --allow-target-mismatch
+```
+
+The ELF verifier still runs in override mode. `ARTIFACT_SOURCE` may later be an
+HTTPS GitHub Release directory.
 
 The older `deploy-private-bundle.sh` remains available as a Fedora-initiated
 push helper, but it is not part of this separated personal workflow.
@@ -180,6 +215,11 @@ session:
 cd ~/steamos-waydroid-personal-installer
 ./steamos-waydroid-installer.sh
 ```
+
+The installer and Game Mode launcher repeat the exact target check. A SteamOS
+update therefore stops an older bundle from being used silently. Re-run the
+snapshot, build, publish, and Deck install stages for the new `BUILD_ID`; older
+version directories remain available for rollback.
 
 ## Full two-machine reset
 

@@ -6,12 +6,30 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE="$HOME/.local/opt/steamos-waydroid/current"
 CAGE="$BUNDLE/bin/cage"
 WLR_RANDR="$BUNDLE/bin/wlr-randr"
+TARGET_CHECK="$BUNDLE/tools/check-bundle-target.sh"
+TARGET_ALLOW="$HOME/.local/opt/steamos-waydroid/allow-target-mismatch"
 CONFIG_DIR="$SCRIPT_DIR/config"
 RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
 
-if [ ! -x "$CAGE" ] || [ ! -x "$WLR_RANDR" ] || [ ! -f "$BUNDLE/.verified" ]
+if [ ! -x "$CAGE" ] || [ ! -x "$WLR_RANDR" ] || \
+	[ ! -x "$TARGET_CHECK" ] || [ ! -f "$BUNDLE/.verified" ]
 then
 	kdialog --error "Private Cage bundle is missing or unverified. Run the Fedora deployment tool."
+	exit 1
+fi
+target_check_args=("$BUNDLE")
+active_bundle_version=$(basename "$(readlink -f "$BUNDLE")")
+if [ -r "$TARGET_ALLOW" ] && [ "$(cat "$TARGET_ALLOW")" = "$active_bundle_version" ]
+then
+	target_check_args+=(--allow-target-mismatch)
+fi
+if ! TARGET_CHECK_OUTPUT=$("$TARGET_CHECK" "${target_check_args[@]}" 2>&1)
+then
+	kdialog --error "The private Cage bundle does not match this SteamOS build.
+
+$TARGET_CHECK_OUTPUT
+
+Rebuild and install the bundle before launching Waydroid."
 	exit 1
 fi
 if [ ! -x /usr/bin/waydroid ]

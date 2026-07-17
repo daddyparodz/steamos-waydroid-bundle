@@ -6,6 +6,14 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${DECK_CONFIG_FILE:-$REPO_ROOT/.deck-config.env}"
+ALLOW_TARGET_MISMATCH=false
+
+if [[ ${1:-} == --allow-target-mismatch ]]; then
+    ALLOW_TARGET_MISMATCH=true
+elif [[ $# -ne 0 ]]; then
+    printf 'usage: %s [--allow-target-mismatch]\n' "$0" >&2
+    exit 1
+fi
 
 die() {
     printf 'error: %s\n' "$*" >&2
@@ -25,17 +33,14 @@ source "$CONFIG_FILE"
 ARTIFACT_SOURCE="${ARTIFACT_SOURCE:-}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-}"
 [[ -n "$ARTIFACT_SOURCE" ]] || die "ARTIFACT_SOURCE is not configured"
-[[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe BUNDLE_VERSION"
+[[ -n "$BUNDLE_VERSION" ]] || die "BUNDLE_VERSION is not configured"
 
 for command_name in sha256sum tar; do
     command -v "$command_name" > /dev/null || die "required command not found: $command_name"
 done
 
-ARCHIVE_NAME="$BUNDLE_VERSION.tar.gz"
-HASH_NAME="$ARCHIVE_NAME.sha256"
 PROJECT_ROOT="$HOME/.local/opt/steamos-waydroid"
-TARGET_ROOT="$PROJECT_ROOT/builds/$BUNDLE_VERSION"
-STAGING_ROOT="$PROJECT_ROOT/.$BUNDLE_VERSION.staging"
+TARGET_MISMATCH_ALLOW_FILE="$PROJECT_ROOT/allow-target-mismatch"
 mkdir -p "$HOME/.cache"
 DOWNLOAD_ROOT="$(mktemp -d "$HOME/.cache/steamos-waydroid-artifact.XXXXXX")"
 cleanup() {
@@ -62,7 +67,32 @@ fetch_file() {
     esac
 }
 
+manifest_value() {
+    local manifest_file="$1"
+    local key="$2"
+    awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); print; exit}' \
+        "$manifest_file"
+}
+
+if [[ "$BUNDLE_VERSION" == auto ]]; then
+    printf 'Resolving the latest published target bundle...\n'
+    fetch_file latest.manifest
+    BUNDLE_VERSION="$(manifest_value "$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+fi
+[[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe BUNDLE_VERSION"
+
+ARCHIVE_NAME="$BUNDLE_VERSION.tar.gz"
+HASH_NAME="$ARCHIVE_NAME.sha256"
+MANIFEST_NAME="$BUNDLE_VERSION.manifest"
+TARGET_ROOT="$PROJECT_ROOT/builds/$BUNDLE_VERSION"
+STAGING_ROOT="$PROJECT_ROOT/.$BUNDLE_VERSION.staging"
+
 printf 'Fetching private bundle %s...\n' "$BUNDLE_VERSION"
+fetch_file "$MANIFEST_NAME"
+manifest_bundle_version="$(manifest_value \
+    "$DOWNLOAD_ROOT/$MANIFEST_NAME" bundle_version)"
+[[ "$manifest_bundle_version" == "$BUNDLE_VERSION" ]] || \
+    die "artifact manifest version does not match $BUNDLE_VERSION"
 fetch_file "$ARCHIVE_NAME"
 fetch_file "$HASH_NAME"
 
@@ -100,6 +130,17 @@ fi
 printf 'Verifying the bundle against this SteamOS host...\n'
 "$SCRIPT_DIR/verify-private-bundle.sh" "$TARGET_ROOT"
 [[ -f "$TARGET_ROOT/.verified" ]] || die "artifact has no build verification marker"
+target_check_arguments=("$TARGET_ROOT")
+if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then
+    target_check_arguments+=(--allow-target-mismatch)
+fi
+"$TARGET_ROOT/tools/check-bundle-target.sh" "${target_check_arguments[@]}"
+
+if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then
+    printf '%s\n' "$BUNDLE_VERSION" > "$TARGET_MISMATCH_ALLOW_FILE"
+else
+    rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
+fi
 
 (
     cd "$PROJECT_ROOT"

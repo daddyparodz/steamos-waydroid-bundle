@@ -12,6 +12,8 @@ for command_name in git sha256sum tar; do
     require_command "$command_name"
 done
 
+resolve_bundle_version
+
 [[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "BUNDLE_VERSION may contain only letters, numbers, dots, underscores, and hyphens"
 
@@ -19,6 +21,7 @@ BUNDLE_ROOT="$BUILD_WORK_ROOT/out/$BUNDLE_VERSION"
 ARCHIVE_NAME="$BUNDLE_VERSION.tar.gz"
 HASH_NAME="$ARCHIVE_NAME.sha256"
 MANIFEST_NAME="$BUNDLE_VERSION.manifest"
+LATEST_MANIFEST_NAME="latest.manifest"
 
 [[ -d "$BUNDLE_ROOT" ]] || die "built bundle not found: $BUNDLE_ROOT"
 [[ -f "$BUNDLE_ROOT/.verified" ]] || die "bundle has no verification marker"
@@ -56,12 +59,16 @@ source_revision=$SOURCE_REVISION
 archive=$ARCHIVE_NAME
 sha256=$ARCHIVE_SHA256
 EOF
+cat "$BUNDLE_ROOT/target-fingerprint.env" >> "$STAGING_ROOT/$MANIFEST_NAME"
+cp "$STAGING_ROOT/$MANIFEST_NAME" "$STAGING_ROOT/$LATEST_MANIFEST_NAME"
 
 mv \
     "$STAGING_ROOT/$ARCHIVE_NAME" \
     "$STAGING_ROOT/$HASH_NAME" \
     "$STAGING_ROOT/$MANIFEST_NAME" \
     "$PUBLISH_ROOT/"
+mv -f "$STAGING_ROOT/$LATEST_MANIFEST_NAME" \
+    "$PUBLISH_ROOT/$LATEST_MANIFEST_NAME"
 
 printf '\nPublished private bundle:\n'
 printf '  %s/%s\n' "$PUBLISH_ROOT" "$ARCHIVE_NAME"

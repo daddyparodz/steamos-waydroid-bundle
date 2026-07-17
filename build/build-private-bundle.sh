@@ -13,6 +13,9 @@ for command_name in git meson ninja patchelf pkg-config readelf ldd; do
     require_command "$command_name"
 done
 
+[[ -r "$TARGET_FINGERPRINT_FILE" ]] || \
+    die "target fingerprint is missing: $TARGET_FINGERPRINT_FILE"
+
 required_system_headers=(
     stdio.h
     stdint.h
@@ -78,7 +81,6 @@ PRIVATE_PREFIX="${PRIVATE_PREFIX:-/opt/steamos-waydroid-build}"
 BUNDLE_ROOT="$OUTPUT_ROOT/$BUNDLE_VERSION"
 STAGING_ROOT="$OUTPUT_ROOT/.$BUNDLE_VERSION.staging"
 
-WLROOTS_VERSION="0.18.2"
 CAGE_VERSION="v0.2.0"
 WLR_RANDR_VERSION="v0.5.0"
 
@@ -191,10 +193,21 @@ if [[ -e "$BUNDLE_ROOT" ]]; then
 fi
 archive_incomplete_output "$STAGING_ROOT"
 
-install -d "$STAGING_ROOT/bin" "$STAGING_ROOT/lib" "$STAGING_ROOT/licenses"
+install -d \
+    "$STAGING_ROOT/bin" \
+    "$STAGING_ROOT/lib" \
+    "$STAGING_ROOT/licenses" \
+    "$STAGING_ROOT/tools"
 install -m 0755 "$PRIVATE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
 install -m 0755 "$PRIVATE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
 cp -a "$PRIVATE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
+install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env"
+install -m 0755 \
+    "$SCRIPT_DIR/check-bundle-target.sh" \
+    "$STAGING_ROOT/tools/check-bundle-target.sh"
+install -m 0644 \
+    "$SCRIPT_DIR/lib/target-fingerprint.sh" \
+    "$STAGING_ROOT/tools/target-fingerprint.sh"
 
 patchelf --set-rpath '$ORIGIN/../lib' "$STAGING_ROOT/bin/cage"
 
@@ -206,6 +219,7 @@ cp "$SOURCE_ROOT/wlr-randr/LICENSE" "$STAGING_ROOT/licenses/wlr-randr.txt"
 # resolve wlroots through its relative RUNPATH from the staged bundle.
 unset LD_LIBRARY_PATH PKG_CONFIG_PATH
 "$SCRIPT_DIR/verify-private-bundle.sh" "$STAGING_ROOT"
+"$SCRIPT_DIR/check-bundle-target.sh" "$STAGING_ROOT"
 printf 'verified\n' > "$STAGING_ROOT/.verified"
 mv "$STAGING_ROOT" "$BUNDLE_ROOT"
 

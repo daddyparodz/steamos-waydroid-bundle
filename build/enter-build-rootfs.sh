@@ -11,7 +11,11 @@ require_non_root
 require_command systemd-nspawn
 require_command sudo
 
-ROOTFS_ROOT="$BUILD_WORK_ROOT/rootfs"
+resolve_bundle_version
+
+[[ -n "$TARGET_WORK_ROOT" ]] || \
+    die "target build environment missing; rerun build/sync-steamos-rootfs.sh"
+ROOTFS_ROOT="$TARGET_WORK_ROOT/rootfs"
 SOURCE_ROOT="$BUILD_WORK_ROOT/src"
 OUTPUT_ROOT="$BUILD_WORK_ROOT/out"
 
@@ -30,7 +34,9 @@ sudo systemd-nspawn \
     --bind-ro="$REPO_ROOT:/repo" \
     --bind="$SOURCE_ROOT:/work/src" \
     --bind="$OUTPUT_ROOT:/work/out" \
+    --bind-ro="$TARGET_FINGERPRINT_FILE:/work/target-fingerprint.env" \
     --setenv="BUNDLE_VERSION=$BUNDLE_VERSION" \
+    --setenv="TARGET_FINGERPRINT_FILE=/work/target-fingerprint.env" \
     --setenv="HOST_UID=$(id -u)" \
     --setenv="HOST_GID=$(id -g)" \
     /usr/bin/bash

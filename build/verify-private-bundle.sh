@@ -15,6 +15,12 @@ BUNDLE_ROOT="${1:-}"
 [[ -n "$BUNDLE_ROOT" ]] || die "usage: $0 BUNDLE_DIRECTORY"
 [[ -x "$BUNDLE_ROOT/bin/cage" ]] || die "Cage executable is missing"
 [[ -x "$BUNDLE_ROOT/bin/wlr-randr" ]] || die "wlr-randr executable is missing"
+[[ -r "$BUNDLE_ROOT/target-fingerprint.env" ]] || \
+    die "bundle target fingerprint is missing"
+[[ -x "$BUNDLE_ROOT/tools/check-bundle-target.sh" ]] || \
+    die "bundle target checker is missing"
+[[ -r "$BUNDLE_ROOT/tools/target-fingerprint.sh" ]] || \
+    die "bundle target fingerprint helper is missing"
 
 mapfile -t wlroots_libraries < <(
     find "$BUNDLE_ROOT/lib" -maxdepth 1 \

@@ -76,6 +76,7 @@ SOURCE_ROOT="${SOURCE_ROOT:-/work/src}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/work/out}"
 PRIVATE_PREFIX="${PRIVATE_PREFIX:-/opt/steamos-waydroid-build}"
 BUNDLE_ROOT="$OUTPUT_ROOT/$BUNDLE_VERSION"
+STAGING_ROOT="$OUTPUT_ROOT/.$BUNDLE_VERSION.staging"
 
 WLROOTS_VERSION="0.18.2"
 CAGE_VERSION="v0.2.0"
@@ -106,6 +107,16 @@ setup_build_directory() {
     else
         meson setup "$source_directory/build-private" "$source_directory" "$@"
     fi
+}
+
+archive_incomplete_output() {
+    local incomplete_path="$1"
+    local archive_path
+
+    [[ -e "$incomplete_path" ]] || return 0
+    archive_path="$OUTPUT_ROOT/$(basename -- "$incomplete_path").failed-$(date +%Y%m%d-%H%M%S)"
+    mv "$incomplete_path" "$archive_path"
+    printf 'Archived incomplete output at %s\n' "$archive_path" >&2
 }
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
@@ -173,21 +184,30 @@ meson compile -C "$SOURCE_ROOT/wlr-randr/build-private"
 meson install -C "$SOURCE_ROOT/wlr-randr/build-private"
 
 if [[ -e "$BUNDLE_ROOT" ]]; then
-    die "output already exists: $BUNDLE_ROOT (choose a new BUNDLE_VERSION)"
+    if [[ -f "$BUNDLE_ROOT/.verified" ]]; then
+        die "verified output already exists: $BUNDLE_ROOT (choose a new BUNDLE_VERSION)"
+    fi
+    archive_incomplete_output "$BUNDLE_ROOT"
 fi
+archive_incomplete_output "$STAGING_ROOT"
 
-install -d "$BUNDLE_ROOT/bin" "$BUNDLE_ROOT/lib" "$BUNDLE_ROOT/licenses"
-install -m 0755 "$PRIVATE_PREFIX/bin/cage" "$BUNDLE_ROOT/bin/cage"
-install -m 0755 "$PRIVATE_PREFIX/bin/wlr-randr" "$BUNDLE_ROOT/bin/wlr-randr"
-cp -a "$PRIVATE_PREFIX"/lib/libwlroots-0.18.so* "$BUNDLE_ROOT/lib/"
+install -d "$STAGING_ROOT/bin" "$STAGING_ROOT/lib" "$STAGING_ROOT/licenses"
+install -m 0755 "$PRIVATE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
+install -m 0755 "$PRIVATE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
+cp -a "$PRIVATE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
 
-patchelf --set-rpath '$ORIGIN/../lib' "$BUNDLE_ROOT/bin/cage"
+patchelf --set-rpath '$ORIGIN/../lib' "$STAGING_ROOT/bin/cage"
 
-cp "$SOURCE_ROOT/wlroots/LICENSE" "$BUNDLE_ROOT/licenses/wlroots.txt"
-cp "$SOURCE_ROOT/cage/LICENSE" "$BUNDLE_ROOT/licenses/cage.txt"
-cp "$SOURCE_ROOT/wlr-randr/LICENSE" "$BUNDLE_ROOT/licenses/wlr-randr.txt"
+cp "$SOURCE_ROOT/wlroots/LICENSE" "$STAGING_ROOT/licenses/wlroots.txt"
+cp "$SOURCE_ROOT/cage/LICENSE" "$STAGING_ROOT/licenses/cage.txt"
+cp "$SOURCE_ROOT/wlr-randr/LICENSE" "$STAGING_ROOT/licenses/wlr-randr.txt"
 
-"$SCRIPT_DIR/verify-private-bundle.sh" "$BUNDLE_ROOT"
+# Build-only lookup paths must not influence runtime verification. Cage must
+# resolve wlroots through its relative RUNPATH from the staged bundle.
+unset LD_LIBRARY_PATH PKG_CONFIG_PATH
+"$SCRIPT_DIR/verify-private-bundle.sh" "$STAGING_ROOT"
+printf 'verified\n' > "$STAGING_ROOT/.verified"
+mv "$STAGING_ROOT" "$BUNDLE_ROOT"
 
 if [[ -n ${HOST_UID:-} && -n ${HOST_GID:-} ]]; then
     chown -R "$HOST_UID:$HOST_GID" "$BUNDLE_ROOT"

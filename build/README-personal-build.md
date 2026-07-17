@@ -104,7 +104,9 @@ libraries. It also rejects libliftoff and Vulkan dependencies because neither
 is required for the narrow personal runtime. The wlroots configuration makes
 this deterministic by selecting only the GLES2 renderer and explicitly
 disabling libliftoff, Vulkan, Xwayland, xcb-errors, and color-management
-support.
+support. Bundle assembly happens in a staging directory. A verified bundle is
+atomically renamed to its final versioned path; incomplete output from an
+earlier attempt is preserved with a `.failed-TIMESTAMP` suffix.
 
 Exit the container when finished:
 

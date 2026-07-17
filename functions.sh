@@ -17,7 +17,20 @@ mount_waydroid_var () {
 unmount_waydroid_var () {
 	# this will unmount the custom /var/lib/waydroid
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &> /dev/null
-	echo -e "$current_password\n" | sudo -S losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)  &> /dev/null
+	local image_path="${1:-}"
+	local loop_device
+	if [ -n "$image_path" ] && [ -f "$image_path" ]
+	then
+		while IFS=: read -r loop_device _
+		do
+			if [[ "$loop_device" == /dev/loop* ]]
+			then
+				echo -e "$current_password\n" | sudo -S losetup -d "$loop_device" &> /dev/null || true
+			fi
+		done < <(echo -e "$current_password\n" | sudo -S losetup -j "$image_path" 2> /dev/null)
+	else
+		echo -e "$current_password\n" | sudo -S losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)  &> /dev/null
+	fi
 }
 
 cleanup_exit () {
@@ -27,8 +40,7 @@ cleanup_exit () {
 	
 	# remove installed packages
 	echo -e "$current_password\n" | sudo -S pacman -R --noconfirm libglibutil libgbinder \
-		python-gbinder waydroid binder_linux-dkms fakeroot debugedit \
-		dkms plymouth linux-neptune-$(uname -r | cut -d "-" -f5)-headers &> /dev/null
+		python-gbinder waydroid &> /dev/null
 	
 	# unmount the custom /var/lib/waydroid
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &> /dev/null
@@ -38,7 +50,7 @@ cleanup_exit () {
 	echo -e "$current_password\n" | sudo -S rm -rf /var/lib/waydroid &> /dev/null
 	
 	# delete waydroid config and scripts
-	echo -e "$current_password\n" | sudo -S rm /etc/sudoers.d/zzzzzzzz-waydroid /etc/modules-load.d/waydroid.conf /usr/bin/waydroid* &> /dev/null
+	echo -e "$current_password\n" | sudo -S rm /etc/sudoers.d/zzzzzzzz-waydroid /usr/bin/waydroid* &> /dev/null
 
 	# delete Waydroid Toolbox and Waydroid Update symlinks
 	rm ~/Desktop/Waydroid-Updater &> /dev/null

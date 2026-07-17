@@ -338,8 +338,12 @@ Answer - This issue happens if Steam client cant be run because the script was c
 
 # A Note on SteamOS Updates
 When there is a SteamOS update the waydroid will be wiped. This is normal behavior due to how SteamOS applies updates. \
-Re-run the script again but if the SteamOS update contains a new kernel version the script will exit immediately. \
-Please file an issue report when this happens so I can compile a binder kernel module to match the SteamOS update.
+If the private Android image and launcher still exist, restore the erased host integration without reinitializing Android:
+```sh
+cd ~/steamos-waydroid-installer
+./steamos-waydroid-installer.sh --repair
+```
+Repair requires a private Cage bundle and bundled host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
 
 # Mini-guides for Steam Deck Android Waydroid
 These mini guides are tailor-fitted for the Steam Deck that uses the script provided in this repo.

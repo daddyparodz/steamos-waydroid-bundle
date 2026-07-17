@@ -1,5 +1,15 @@
 #!/bin/bash
 
+REPAIR_MODE=false
+case "${1:-}" in
+	"") ;;
+	--repair) REPAIR_MODE=true ;;
+	*)
+		echo "usage: $0 [--repair]" >&2
+		exit 1
+		;;
+esac
+
 clear
 
 echo SteamOS Waydroid Installer Script by ryanrudolf
@@ -32,6 +42,7 @@ PRIVATE_WLR_RANDR=$PRIVATE_BUNDLE/bin/wlr-randr
 PRIVATE_TARGET_CHECK=$PRIVATE_BUNDLE/tools/check-bundle-target.sh
 PRIVATE_COMPATIBILITY_REPORT=$PRIVATE_BUNDLE/tools/compatibility-report.sh
 PRIVATE_TARGET_ALLOW=$HOME/.local/opt/steamos-waydroid/allow-target-mismatch
+WAYDROID_IMAGE=$HOME/Android_Waydroid/waydroid.img
 
 # android TV builds
 ANDROID13_TV_OTA=https://ota.supechicken666.dev
@@ -43,6 +54,40 @@ ANDROID13_IMG=https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer/releas
 ANDROID13_IMG_HASH=aafdd4ef69e8a11d64ba02e881c1697d6a3ee4fa4c1fb97e33abc6da5f4bb6d4
 
 echo script version: $SCRIPT_VERSION_SHA
+if [ "$REPAIR_MODE" = true ]
+then
+	echo Mode: repair existing installation
+	if [ ! -f "$WAYDROID_IMAGE" ]
+	then
+		echo "Repair requires an existing Android image: $WAYDROID_IMAGE" >&2
+		echo Run the installer without --repair for a new installation. >&2
+		exit 1
+	fi
+	if [ ! -r "$HOME/Android_Waydroid/Android_Waydroid_Cage.sh" ] || \
+		[ ! -r "$HOME/Android_Waydroid/config/fake_wifi" ] || \
+		[ ! -r "$HOME/Android_Waydroid/config/fake_touch" ]
+	then
+		echo The persistent Waydroid launcher or configuration is missing. >&2
+		echo Repair stopped without changing Android data. >&2
+		exit 1
+	fi
+
+	python_package=(extras/pacman/python-gbinder*.zst)
+	if [ "${#python_package[@]}" -ne 1 ] || [ ! -f "${python_package[0]}" ]
+	then
+		echo Repair requires exactly one bundled python-gbinder package. >&2
+		exit 1
+	fi
+	packaged_python_version=$(bsdtar -tf "${python_package[0]}" | \
+		awk -F/ '$2 == "lib" && $3 ~ /^python[0-9]+\.[0-9]+$/ {sub(/^python/, "", $3); print $3; exit}')
+	host_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+	if [ -z "$packaged_python_version" ] || [ "$packaged_python_version" != "$host_python_version" ]
+	then
+		echo "Bundled python-gbinder targets Python ${packaged_python_version:-unknown}, but SteamOS provides Python $host_python_version." >&2
+		echo Prepare compatible host packages before repairing this SteamOS deployment. >&2
+		exit 1
+	fi
+fi
 
 # Select an already-installed exact target bundle, or fetch the matching
 # published artifact, before this installer performs privileged integration.
@@ -84,24 +129,51 @@ fi
 # define functions here
 source functions.sh
 
+abort_run () {
+	if [ "$REPAIR_MODE" = true ]
+	then
+		echo Repair failed. Persistent Android data has not been removed. >&2
+		exit 1
+	fi
+	cleanup_exit
+}
+
 # run the sanity checks
 source sanity-checks.sh
 
 # sanity checks are all good. lets go!
-
-# perform git clone of waydroid_script and binder kernel module source
-echo Cloning casualsnek / aleasto waydroid_script repo and binder kernel module source repo.
-echo This can take a few minutes depending on the speed of the internet connection and if github is having issues.
-echo If the git clone is slow - cancel the script \(CTL-C\) and run it again.
-
-git clone --depth=1 $WAYDROID_SCRIPT $WAYDROID_SCRIPT_DIR &> /dev/null
-if [ $? -eq 0 ]
+if [ "$REPAIR_MODE" = true ]
 then
-	echo Repo has been successfully cloned! Proceed to the next step.
-else
-	echo Error cloning the casualsnek / aleasto waydroid_script repo!
-	rm -rf $WAYDROID_SCRIPT_DIR
-	cleanup_exit
+	repair_exit_cleanup () {
+		trap - EXIT HUP INT TERM
+		echo -e "$current_password\n" | sudo -S systemctl stop waydroid-container.service &> /dev/null || true
+		unmount_waydroid_var "$WAYDROID_IMAGE"
+		echo -e "$current_password\n" | sudo -S steamos-readonly enable &> /dev/null || true
+	}
+	trap repair_exit_cleanup EXIT
+	trap 'exit 130' HUP INT TERM
+	# An interrupted prior session must not leave the persistent image busy while
+	# packages and root-owned integration are restored.
+	echo -e "$current_password\n" | sudo -S systemctl stop waydroid-container.service &> /dev/null || true
+	unmount_waydroid_var "$WAYDROID_IMAGE"
+fi
+
+# Android modification tooling is needed only for a new installation.
+if [ "$REPAIR_MODE" != true ]
+then
+	echo Cloning casualsnek / aleasto waydroid_script repo.
+	echo This can take a few minutes depending on the speed of the internet connection and if github is having issues.
+	echo If the git clone is slow - cancel the script \(CTL-C\) and run it again.
+
+	git clone --depth=1 $WAYDROID_SCRIPT $WAYDROID_SCRIPT_DIR &> /dev/null
+	if [ $? -eq 0 ]
+	then
+		echo Repo has been successfully cloned! Proceed to the next step.
+	else
+		echo Error cloning the casualsnek / aleasto waydroid_script repo!
+		rm -rf $WAYDROID_SCRIPT_DIR
+		abort_run
+	fi
 fi
 
 # unlock the readonly and initialize keyring using the devmode method
@@ -114,7 +186,7 @@ then
 	echo pacman keyring has been initialized!
 else
 	echo Error initializing keyring!
-	cleanup_exit
+	abort_run
 fi
 
 # ok lets install precompiled waydroid
@@ -130,20 +202,41 @@ then
 	echo -e "$current_password\n" | sudo -S systemctl disable waydroid-container.service
 else
 	echo Error installing waydroid. Run the script again to install waydroid.
-	cleanup_exit
+	abort_run
 fi
 
 # firewall config for waydroid0 interface to forward packets for internet to work
 # but first lets enable firewalld - some instance of SteamOS this is disabled / stopped?
+firewalld_was_active=false
+if systemctl is-active --quiet firewalld.service
+then
+	firewalld_was_active=true
+fi
 echo -e "$current_password\n" | sudo -S systemctl start firewalld
 echo -e "$current_password\n" | sudo -S firewall-cmd --zone=trusted --add-interface=waydroid0 &> /dev/null
 echo -e "$current_password\n" | sudo -S firewall-cmd --zone=trusted --add-port={53,67}/udp &> /dev/null
 echo -e "$current_password\n" | sudo -S firewall-cmd --zone=trusted --add-forward &> /dev/null
-echo -e "$current_password\n" | sudo -S firewall-cmd --runtime-to-permanent &> /dev/null
-echo -e "$current_password\n" | sudo -S systemctl stop firewalld
+if [ "$REPAIR_MODE" = true ]
+then
+	# Persist only this project's rules. Do not copy unrelated runtime firewall
+	# changes into the permanent configuration during a repair.
+	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-interface=waydroid0 &> /dev/null
+	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-port=53/udp &> /dev/null
+	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-port=67/udp &> /dev/null
+	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-forward &> /dev/null
+else
+	echo -e "$current_password\n" | sudo -S firewall-cmd --runtime-to-permanent &> /dev/null
+fi
+if [ "$firewalld_was_active" != true ]
+then
+	echo -e "$current_password\n" | sudo -S systemctl stop firewalld
+fi
 
 # lets install the custom config files
-mkdir -p ~/Android_Waydroid/config &> /dev/null
+if [ "$REPAIR_MODE" != true ]
+then
+	mkdir -p ~/Android_Waydroid/config &> /dev/null
+fi
 
 # waydroid startup and shutdown scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-startup-scripts /usr/bin/waydroid-startup-scripts
@@ -153,27 +246,32 @@ echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-firewall /usr
 echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
 
 # custom sudoers file do not ask for sudo for the custom waydroid scripts
-echo -e "$current_password\n" | sudo -S cp extras/zzzzzzzz-waydroid /etc/sudoers.d/zzzzzzzz-waydroid
-echo -e "$current_password\n" | sudo -S chown root:root /etc/sudoers.d/zzzzzzzz-waydroid
+echo -e "$current_password\n" | sudo -S visudo -cf extras/zzzzzzzz-waydroid > /dev/null || abort_run
+echo -e "$current_password\n" | sudo -S install -o root -g root -m 0440 \
+	extras/zzzzzzzz-waydroid /etc/sudoers.d/zzzzzzzz-waydroid
+echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 
-# copy waydroid launcher dependencies
-cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
-	extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
-cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
-cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
-cp android.jpg ~/Android_Waydroid/steam-artwork.jpg
+if [ "$REPAIR_MODE" != true ]
+then
+	# copy waydroid launcher dependencies
+	cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
+		extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
+	cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
+	cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
+	cp android.jpg ~/Android_Waydroid/steam-artwork.jpg
 
-# waydroid launcher, toolbox and updater
-chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
+	# waydroid launcher, toolbox and updater
+	chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
 
-# Dolphin File Manager extension for root access
-mkdir -p ~/.local/share/kio/servicemenus
-cp extras/open_as_root.desktop ~/.local/share/kio/servicemenus
-chmod +x ~/.local/share/kio/servicemenus/open_as_root.desktop
+	# Dolphin File Manager extension for root access
+	mkdir -p ~/.local/share/kio/servicemenus
+	cp extras/open_as_root.desktop ~/.local/share/kio/servicemenus
+	chmod +x ~/.local/share/kio/servicemenus/open_as_root.desktop
 
-# desktop shortcuts for toolbox + updater
-ln -s ~/Android_Waydroid/Waydroid-Toolbox.sh ~/Desktop/Waydroid-Toolbox &> /dev/null
-ln -s ~/Android_Waydroid/Waydroid-Updater.sh ~/Desktop/Waydroid-Updater &> /dev/null
+	# desktop shortcuts for toolbox + updater
+	ln -s ~/Android_Waydroid/Waydroid-Toolbox.sh ~/Desktop/Waydroid-Toolbox &> /dev/null
+	ln -s ~/Android_Waydroid/Waydroid-Updater.sh ~/Desktop/Waydroid-Updater &> /dev/null
+fi
 
 
 # lets check if this is a reinstall
@@ -190,7 +288,15 @@ if [ -f $HOME/Android_Waydroid/waydroid.img ]
 then
 	echo Most probably this is a reinstall!
 	echo Mounting waydroid.img to /var/lib/waydroid
-	ROOTDEV=$(sudo losetup --find --show $HOME/Android_Waydroid/waydroid.img) && sudo mount $ROOTDEV /var/lib/waydroid
+	ROOTDEV=$(sudo losetup --find --show "$WAYDROID_IMAGE")
+	if [ "$REPAIR_MODE" = true ]
+	then
+		# Repair only validates persistent state; do not replay the ext4 journal or
+		# write to Android data while restoring the SteamOS host integration.
+		sudo mount -o ro,noload "$ROOTDEV" /var/lib/waydroid
+	else
+		sudo mount "$ROOTDEV" /var/lib/waydroid
+	fi
 
 	if [ $? -eq 0 ]
 	then
@@ -198,7 +304,7 @@ then
 	else
 		echo Error mounting waydroid.img
 		echo Exiting immediately.
-		cleanup_exit
+		abort_run
 	fi
 
 else
@@ -211,8 +317,73 @@ else
 		echo Custom /var/lib/waydroid has been created and mounted!
 	else
 		echo Error creating /var/lib/waydroid. Exiting immediately.
-		cleanup_exit
+		abort_run
 	fi
+fi
+
+if [ "$REPAIR_MODE" = true ]
+then
+	if [ ! -s /var/lib/waydroid/waydroid_base.prop ]
+	then
+		echo The persistent image mounted, but waydroid_base.prop is missing. >&2
+		echo Repair stopped without initializing or modifying Android. >&2
+		abort_run
+	fi
+
+	echo Restoring the custom-image integration.
+	echo -e "$current_password\n" | sudo -S mkdir -p /etc/waydroid-extra
+	if [ -L /etc/waydroid-extra/images ]
+	then
+		if [ "$(readlink /etc/waydroid-extra/images)" != /var/lib/waydroid/custom ]
+		then
+			echo /etc/waydroid-extra/images points to an unexpected location. >&2
+			echo Repair will not overwrite it. >&2
+			abort_run
+		fi
+	elif [ -e /etc/waydroid-extra/images ]
+	then
+		echo /etc/waydroid-extra/images exists and is not the expected symlink. >&2
+		echo Repair will not overwrite it. >&2
+		abort_run
+	else
+		echo -e "$current_password\n" | sudo -S ln -s /var/lib/waydroid/custom /etc/waydroid-extra/images
+	fi
+
+	echo Verifying repaired host integration.
+	for required_file in \
+		/usr/bin/waydroid \
+		/usr/bin/waydroid-startup-scripts \
+		/usr/bin/waydroid-shutdown-scripts \
+		/usr/bin/waydroid-mount \
+		/usr/bin/waydroid-firewall \
+		/usr/lib/systemd/system/waydroid-container.service \
+		/etc/sudoers.d/zzzzzzzz-waydroid
+	do
+		if [ ! -e "$required_file" ]
+		then
+			echo "Repair verification failed: $required_file is missing." >&2
+			abort_run
+		fi
+	done
+	if ! python3 -c 'import gbinder' &> /dev/null
+	then
+		echo Repair verification failed: python-gbinder cannot be imported. >&2
+		abort_run
+	fi
+	if ldd /usr/lib/libgbinder.so.1 2> /dev/null | grep -q 'not found'
+	then
+		echo Repair verification failed: libgbinder has an unresolved dependency. >&2
+		abort_run
+	fi
+	echo -e "$current_password\n" | sudo -S visudo -cf /etc/sudoers.d/zzzzzzzz-waydroid > /dev/null || abort_run
+
+	echo Unmounting the persistent Android image after verification.
+	echo -e "$current_password\n" | sudo -S systemctl stop waydroid-container.service &> /dev/null || true
+	unmount_waydroid_var "$WAYDROID_IMAGE"
+	echo -e "$current_password\n" | sudo -S steamos-readonly enable
+	trap - EXIT HUP INT TERM
+	echo Waydroid host integration has been repaired. Android data was not reinitialized or modified.
+	exit 0
 fi
 
 echo Checking if this is a reinstall - step3.

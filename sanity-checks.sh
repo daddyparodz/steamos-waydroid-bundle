@@ -43,16 +43,20 @@ then
 	fi
 fi
 
-# sanity check - make sure there is enough free space in the home partition (at least 10GB)
-echo Checking if home partition has enough free space
-echo home partition has $FREE_HOME free space.
-if [ $FREE_HOME -ge 10000000 ]
+# A repair reuses the persistent Android image and does not need fresh-image space.
+if [ "${REPAIR_MODE:-false}" != true ]
 then
-	echo home partition has enough free space.
-else
-	echo Not enough space on the home partition!
-	echo Make sure that there is at least 10GB free space on the home partition!
-	exit
+	# sanity check - make sure there is enough free space in the home partition (at least 10GB)
+	echo Checking if home partition has enough free space
+	echo home partition has $FREE_HOME free space.
+	if [ $FREE_HOME -ge 10000000 ]
+	then
+		echo home partition has enough free space.
+	else
+		echo Not enough space on the home partition!
+		echo Make sure that there is at least 10GB free space on the home partition!
+		exit
+	fi
 fi
 
 # sanity check - make sure sudo password is already set
@@ -77,7 +81,7 @@ fi
 
 # sanity check - is Decky Loader installed?
 systemctl is-active --quiet plugin_loader.service
-if [ $? -eq 0 ]
+if [ $? -eq 0 ] && [ "${REPAIR_MODE:-false}" != true ]
 then
 	echo Decky Loader detected! This may cause issues with the SteamOS Waydroid installer script!
 	echo Temporary disabling the Decky Loader plugin loader service.
@@ -94,4 +98,3 @@ then
 		exit
 	fi
 fi
-

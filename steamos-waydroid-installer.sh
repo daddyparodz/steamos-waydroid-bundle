@@ -138,6 +138,13 @@ abort_run () {
 	cleanup_exit
 }
 
+prompt_return_to_gaming_mode () {
+	if zenity --question --text="Do you Want to Return to Gaming Mode?"
+	then
+		qdbus org.kde.Shutdown /Shutdown org.kde.Shutdown.logout
+	fi
+}
+
 # run the sanity checks
 source sanity-checks.sh
 
@@ -383,6 +390,7 @@ then
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable
 	trap - EXIT HUP INT TERM
 	echo Waydroid host integration has been repaired. Android data was not reinitialized or modified.
+	prompt_return_to_gaming_mode
 	exit 0
 fi
 
@@ -536,6 +544,4 @@ EOF
 fi
 
 # all done! Display dialog box for Gaming Mode
-if zenity --question --text="Do you Want to Return to Gaming Mode?"; then
-	qdbus org.kde.Shutdown /Shutdown org.kde.Shutdown.logout
-fi
+prompt_return_to_gaming_mode

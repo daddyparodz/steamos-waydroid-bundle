@@ -45,6 +45,10 @@ done
 if (( ${#missing_pkg_config_dependencies[@]} > 0 )); then
     printf 'Missing development metadata in the minified SteamOS rootfs:\n' >&2
     printf '  %s\n' "${missing_pkg_config_dependencies[@]}" >&2
+    printf 'pkg-config dependency details:\n' >&2
+    for dependency in "${missing_pkg_config_dependencies[@]}"; do
+        pkg-config --print-errors --exists "$dependency" 2>&1 || true
+    done
     die "restore the development payloads described in build/README-personal-build.md"
 fi
 

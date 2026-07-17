@@ -72,7 +72,7 @@ package versions:
 pacman -S \
     wayland libdisplay-info libdrm libxkbcommon pixman mesa libglvnd \
     systemd-libs seatd libinput hwdata libxcb xcb-util-renderutil \
-    libffi libxau libxdmcp
+    libffi libxau libxdmcp xorgproto
 ```
 
 Do not use `--needed` for this command; these packages are already registered

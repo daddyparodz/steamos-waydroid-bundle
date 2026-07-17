@@ -10,7 +10,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 require_steamos_root
 [[ $EUID -eq 0 ]] || die "run this script as root inside the copied SteamOS rootfs"
 
-for command_name in pacman pacman-key pkg-config update-ca-trust; do
+for command_name in pacman pacman-key update-ca-trust; do
     require_command "$command_name"
 done
 
@@ -73,6 +73,7 @@ fi
 
 printf '\nInstalling build-only tools. Review the transaction before accepting it.\n'
 pacman -S --needed "${build_tool_packages[@]}"
+require_command pkg-config
 
 printf '\nRestoring headers and pkg-config metadata omitted from SteamOS.\n'
 printf 'Review the transaction: it should reinstall the same versions.\n'

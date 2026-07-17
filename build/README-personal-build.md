@@ -63,6 +63,29 @@ pacman -S --needed \
 Review the transaction before accepting it. If pacman proposes replacing or
 upgrading glibc, Wayland, Mesa, or libdisplay-info, cancel it and investigate.
 
+The deployed SteamOS image is minified: its package database records many
+headers and pkg-config files which are omitted from the live image. Restore
+those development payloads inside the copied rootfs by reinstalling the same
+package versions:
+
+```bash
+pacman -S \
+    wayland libdisplay-info libdrm libxkbcommon pixman mesa libglvnd \
+    systemd seatd libinput hwdata libxcb xcb-util-renderutil
+```
+
+Do not use `--needed` for this command; these packages are already registered
+as installed and must be unpacked again. Review the transaction and continue
+only if it reinstalls the same versions. Cancel if it proposes version changes.
+
+Confirm the key metadata before building:
+
+```bash
+pkg-config --modversion \
+    wayland-server libdisplay-info libdrm xkbcommon pixman-1 \
+    egl gbm glesv2 libudev libseat libinput xcb-renderutil
+```
+
 ## 4. Build
 
 Still inside the rootfs:
@@ -76,7 +99,8 @@ private wlroots through a relative RUNPATH, and the bundle excludes host system
 libraries. It also rejects libliftoff and Vulkan dependencies because neither
 is required for the narrow personal runtime. The wlroots configuration makes
 this deterministic by selecting only the GLES2 renderer and explicitly
-disabling libliftoff, Vulkan, Xwayland, and color-management support.
+disabling libliftoff, Vulkan, Xwayland, xcb-errors, and color-management
+support.
 
 Exit the container when finished:
 

@@ -9,9 +9,44 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 require_steamos_root
 
-for command_name in git meson ninja patchelf readelf ldd; do
+for command_name in git meson ninja patchelf pkg-config readelf ldd; do
     require_command "$command_name"
 done
+
+required_pkg_config_dependencies=(
+    wayland-server
+    libdrm
+    xkbcommon
+    pixman-1
+    egl
+    gbm
+    glesv2
+    hwdata
+    libdisplay-info
+    libudev
+    libseat
+    libinput
+    xcb
+    xcb-dri3
+    xcb-present
+    xcb-render
+    xcb-renderutil
+    xcb-shm
+    xcb-xfixes
+    xcb-xinput
+)
+
+missing_pkg_config_dependencies=()
+for dependency in "${required_pkg_config_dependencies[@]}"; do
+    if ! pkg-config --exists "$dependency"; then
+        missing_pkg_config_dependencies+=("$dependency")
+    fi
+done
+if (( ${#missing_pkg_config_dependencies[@]} > 0 )); then
+    printf 'Missing development metadata in the minified SteamOS rootfs:\n' >&2
+    printf '  %s\n' "${missing_pkg_config_dependencies[@]}" >&2
+    die "restore the development payloads described in build/README-personal-build.md"
+fi
 
 SOURCE_ROOT="${SOURCE_ROOT:-/work/src}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/work/out}"
@@ -73,6 +108,7 @@ setup_build_directory "$SOURCE_ROOT/wlroots" \
     -Dwerror=false \
     -Dexamples=false \
     -Dxwayland=disabled \
+    -Dxcb-errors=disabled \
     -Drenderers=gles2 \
     -Dlibliftoff=disabled \
     -Dcolor-management=disabled

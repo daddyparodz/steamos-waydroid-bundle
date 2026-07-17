@@ -77,7 +77,12 @@ rsync -aH --info=progress2 \
     --include='/makepkg.conf.d/***' \
     --include='/ld.so.conf' \
     --include='/ld.so.conf.d/***' \
-    --include='/ssl/certs/***' \
+    --include='/ssl/' \
+    --include='/ssl/cert.pem' \
+    --include='/ssl/certs/' \
+    --include='/ssl/certs/ca-bundle.crt' \
+    --include='/ssl/certs/ca-certificates.crt' \
+    --include='/ca-certificates/' \
     --include='/ca-certificates/***' \
     --exclude='*' \
     "$DECK_HOST:/etc/" \

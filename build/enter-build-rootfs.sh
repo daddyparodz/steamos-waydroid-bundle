@@ -27,7 +27,8 @@ OUTPUT_ROOT="$BUILD_WORK_ROOT/out"
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 
 printf 'Entering the copied SteamOS rootfs.\n'
-printf 'Build with: /repo/build/build-private-bundle.sh\n\n'
+printf 'First prepare with: /repo/build/prepare-build-rootfs.sh\n'
+printf 'Then build with:    /repo/build/build-private-bundle.sh\n\n'
 
 sudo systemd-nspawn \
     --directory="$ROOTFS_ROOT" \

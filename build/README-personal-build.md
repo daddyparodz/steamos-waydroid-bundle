@@ -72,21 +72,25 @@ needed inside the build root; it does not attempt to copy Deck secrets.
 build/enter-build-rootfs.sh
 ```
 
-Inside the copied SteamOS rootfs, install build-only tools. Do not run
+Inside the copied SteamOS rootfs, run the preparation script. Do not run
 `pacman -Syu`:
 
 ```bash
-pacman -S --needed \
-    base-devel git meson ninja patchelf scdoc wayland-protocols
+/repo/build/prepare-build-rootfs.sh
 ```
 
-Review the transaction before accepting it. If pacman proposes replacing or
-upgrading glibc, Wayland, Mesa, or libdisplay-info, cancel it and investigate.
+The script initialises the copied rootfs CA trust and package keyring, installs
+the build tools, restores the development payloads described below, and checks
+their metadata. Pacman remains interactive so each transaction can be
+reviewed. It refuses the development-payload transaction if a repository
+version differs from the installed version recorded in the copied Deck package
+database. If pacman nevertheless proposes replacing or upgrading glibc,
+Wayland, Mesa, or libdisplay-info, cancel it and investigate.
 
 The deployed SteamOS image is minified: its package database records many
-headers and pkg-config files which are omitted from the live image. Restore
-those development payloads inside the copied rootfs by reinstalling the same
-package versions:
+headers and pkg-config files which are omitted from the live image. The
+preparation script restores the following development payloads by reinstalling
+the same package versions (the underlying command is shown for reference):
 
 ```bash
 pacman -S \
@@ -102,7 +106,7 @@ only if it reinstalls the same versions with a zero net upgrade. This includes
 glibc and Linux API headers because SteamOS removes their standard C headers
 from the deployed image. Cancel if pacman proposes any version changes.
 
-Confirm the key metadata before building:
+The script finishes by confirming the equivalent of:
 
 ```bash
 pkg-config --modversion \

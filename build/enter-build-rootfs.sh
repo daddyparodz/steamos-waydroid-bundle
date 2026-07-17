@@ -26,9 +26,15 @@ OUTPUT_ROOT="$BUILD_WORK_ROOT/out"
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 
+container_command=(/usr/bin/bash)
+if (( $# > 0 )); then
+    container_command=("$@")
+fi
+
 printf 'Entering the copied SteamOS rootfs.\n'
 printf 'First prepare with: /repo/build/prepare-build-rootfs.sh\n'
-printf 'Then build with:    /repo/build/build-private-bundle.sh\n\n'
+printf 'Then build the private compositor and host packages with:\n'
+printf '  /repo/build/build-private-bundle.sh\n\n'
 
 sudo systemd-nspawn \
     --directory="$ROOTFS_ROOT" \
@@ -41,4 +47,4 @@ sudo systemd-nspawn \
     --setenv="REPORT_ROOT=/work/out/reports" \
     --setenv="HOST_UID=$(id -u)" \
     --setenv="HOST_GID=$(id -g)" \
-    /usr/bin/bash
+    "${container_command[@]}"

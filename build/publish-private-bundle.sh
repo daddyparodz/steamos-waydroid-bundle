@@ -16,6 +16,9 @@ done
 
 resolve_bundle_version
 
+[[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]] || \
+    die "commit the package recipes and build changes before publishing"
+
 [[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "BUNDLE_VERSION may contain only letters, numbers, dots, underscores, and hyphens"
 

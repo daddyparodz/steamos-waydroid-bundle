@@ -42,6 +42,7 @@ PRIVATE_WLR_RANDR=$PRIVATE_BUNDLE/bin/wlr-randr
 PRIVATE_TARGET_CHECK=$PRIVATE_BUNDLE/tools/check-bundle-target.sh
 PRIVATE_COMPATIBILITY_REPORT=$PRIVATE_BUNDLE/tools/compatibility-report.sh
 PRIVATE_TARGET_ALLOW=$HOME/.local/opt/steamos-waydroid/allow-target-mismatch
+HOST_PACKAGE_ROOT=$PRIVATE_BUNDLE/packages
 WAYDROID_IMAGE=$HOME/Android_Waydroid/waydroid.img
 
 # android TV builds
@@ -71,22 +72,6 @@ then
 		echo Repair stopped without changing Android data. >&2
 		exit 1
 	fi
-
-	python_package=(extras/pacman/python-gbinder*.zst)
-	if [ "${#python_package[@]}" -ne 1 ] || [ ! -f "${python_package[0]}" ]
-	then
-		echo Repair requires exactly one bundled python-gbinder package. >&2
-		exit 1
-	fi
-	packaged_python_version=$(bsdtar -tf "${python_package[0]}" | \
-		awk -F/ '$2 == "lib" && $3 ~ /^python[0-9]+\.[0-9]+$/ {sub(/^python/, "", $3); print $3; exit}')
-	host_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-	if [ -z "$packaged_python_version" ] || [ "$packaged_python_version" != "$host_python_version" ]
-	then
-		echo "Bundled python-gbinder targets Python ${packaged_python_version:-unknown}, but SteamOS provides Python $host_python_version." >&2
-		echo Prepare compatible host packages before repairing this SteamOS deployment. >&2
-		exit 1
-	fi
 fi
 
 # Select an already-installed exact target bundle, or fetch the matching
@@ -95,6 +80,22 @@ if ! "$WORKING_DIR/build/ensure-private-bundle-on-deck.sh"
 then
 	echo Unable to install or activate a private Cage bundle for this SteamOS target.
 	echo Check .deck-config.env and the Fedora artifact source, then run the installer again.
+	exit 1
+fi
+
+python_package=("$HOST_PACKAGE_ROOT"/python-gbinder*.zst)
+if [ "${#python_package[@]}" -ne 1 ] || [ ! -f "${python_package[0]}" ]
+then
+	echo The private bundle must contain exactly one python-gbinder package. >&2
+	exit 1
+fi
+packaged_python_version=$(bsdtar -tf "${python_package[0]}" | \
+	awk -F/ '$2 == "lib" && $3 ~ /^python[0-9]+\.[0-9]+$/ {sub(/^python/, "", $3); print $3; exit}')
+host_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [ -z "$packaged_python_version" ] || [ "$packaged_python_version" != "$host_python_version" ]
+then
+	echo "Private python-gbinder targets Python ${packaged_python_version:-unknown}, but SteamOS provides Python $host_python_version." >&2
+	echo Build and publish a compatible private bundle before continuing. >&2
 	exit 1
 fi
 
@@ -196,12 +197,13 @@ else
 	abort_run
 fi
 
-# ok lets install precompiled waydroid
+# Install the target-built Waydroid host package set from the verified bundle.
 echo Installing waydroid packages. This can take a while.
 echo "*** pacman install waydroid packages ***" &>> $LOGFILE
 cd $WORKING_DIR
-echo -e "$current_password\n" | sudo -S pacman -U --noconfirm extras/pacman/libgbinder*.zst extras/pacman/libglibutil*.zst \
-	extras/pacman/python-gbinder*.zst extras/pacman/waydroid*.zst &>> $LOGFILE 
+echo -e "$current_password\n" | sudo -S pacman -U --noconfirm \
+	"$HOST_PACKAGE_ROOT"/libglibutil*.zst "$HOST_PACKAGE_ROOT"/libgbinder*.zst \
+	"$HOST_PACKAGE_ROOT"/python-gbinder*.zst "$HOST_PACKAGE_ROOT"/waydroid*.zst &>> $LOGFILE
 
 if [ $? -eq 0 ]
 then

@@ -343,7 +343,7 @@ If the private Android image and launcher still exist, restore the erased host i
 cd ~/steamos-waydroid-installer
 ./steamos-waydroid-installer.sh --repair
 ```
-Repair requires a private Cage bundle and bundled host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
+Repair requires a private bundle containing target-built host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
 
 # Mini-guides for Steam Deck Android Waydroid
 These mini guides are tailor-fitted for the Steam Deck that uses the script provided in this repo.

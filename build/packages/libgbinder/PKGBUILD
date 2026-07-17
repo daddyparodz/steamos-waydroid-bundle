@@ -1,0 +1,29 @@
+pkgname=libgbinder
+pkgver=1.1.42
+pkgrel=2
+pkgdesc='GLib-style interface to Binder'
+arch=('x86_64')
+url='https://github.com/mer-hybris/libgbinder'
+license=('BSD-3-Clause')
+depends=('libglibutil' 'glib2')
+options=('!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz"
+        'gcc-typed-destroy-notify.patch')
+sha256sums=('32dcf31c5dc823af11558d180ed5fabb160fdfafe60f01d3212fd200a0842aed'
+            'cdbba28fe130e681f65193f535e4031384c857bd78963b735970f632254407d5')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  patch -Np1 -i ../gcc-typed-destroy-notify.patch
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  make release pkgconfig KEEP_SYMBOLS=1
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" LIBDIR=usr/lib install-dev
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

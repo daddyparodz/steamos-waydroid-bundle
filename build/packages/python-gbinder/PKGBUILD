@@ -1,0 +1,23 @@
+pkgname=python-gbinder
+pkgver=1.1.2
+pkgrel=3
+pkgdesc='Python bindings for libgbinder'
+arch=('x86_64')
+url='https://github.com/erfanoabdi/gbinder-python'
+license=('GPL-3.0-only')
+depends=('libgbinder')
+makedepends=('cython' 'python-setuptools')
+options=('!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz")
+sha256sums=('2dc424d5c2594146612e4bd752964f8928a62eec7c5ce6046f4c582079d0b537')
+
+build() {
+  cd "gbinder-python-$pkgver"
+  python setup.py build --cython
+}
+
+package() {
+  cd "gbinder-python-$pkgver"
+  python setup.py install --root="$pkgdir" --optimize=1 --skip-build
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

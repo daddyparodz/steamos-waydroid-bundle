@@ -6,6 +6,8 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/target-fingerprint.sh
+source "$SCRIPT_DIR/lib/target-fingerprint.sh"
 
 require_steamos_root
 [[ $EUID -eq 0 ]] || die "run this script as root inside the copied SteamOS rootfs"
@@ -16,16 +18,18 @@ done
 
 build_tool_packages=(
     base-devel git meson ninja patchelf scdoc wayland-protocols
+    cython python-setuptools
 )
 
 development_payload_packages=(
-    glibc linux-api-headers
+    glibc linux-api-headers glib2 libsysprof-capture pcre2 python
     wayland libdisplay-info libdrm libxkbcommon pixman mesa libglvnd
     systemd-libs seatd libinput hwdata libxcb xcb-util-renderutil
     libffi libxau libxdmcp xorgproto
 )
 
 required_pkg_config_dependencies=(
+    glib-2.0 gobject-2.0 libpcre2-8 sysprof-capture-4
     wayland-server libdrm xkbcommon pixman-1 egl gbm glesv2 hwdata
     libdisplay-info libudev libseat libinput
     xcb xcb-dri3 xcb-present xcb-render xcb-renderutil
@@ -33,7 +37,7 @@ required_pkg_config_dependencies=(
 )
 
 required_system_headers=(
-    stdio.h stdint.h features.h sys/eventfd.h linux/dma-buf.h
+    stdio.h stdint.h features.h sys/eventfd.h linux/dma-buf.h glib-2.0/glib.h
 )
 
 printf 'Preparing the copied SteamOS rootfs for the private build.\n'
@@ -97,8 +101,30 @@ for header in "${required_system_headers[@]}"; do
     fi
 done
 
+python_header="$(python -c 'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')/Python.h"
+if [[ ! -r "$python_header" ]]; then
+    printf '  MISSING %s\n' "$python_header" >&2
+    verification_failed=true
+fi
+if ! python -c 'import Cython, setuptools' 2> /dev/null; then
+    printf '  MISSING Python Cython or setuptools module\n' >&2
+    verification_failed=true
+fi
+
 [[ "$verification_failed" == false ]] || \
     die "copied rootfs preparation is incomplete; do not start the private build"
+
+printf '\nConfirming preparation did not change the captured target ABI...\n'
+prepared_fingerprint="$(mktemp)"
+cleanup() {
+    rm -f -- "$prepared_fingerprint"
+}
+trap cleanup EXIT
+collect_target_fingerprint "$prepared_fingerprint"
+captured_target="$(fingerprint_value "$TARGET_FINGERPRINT_FILE" TARGET_ENVIRONMENT_ID)"
+prepared_target="$(fingerprint_value "$prepared_fingerprint" TARGET_ENVIRONMENT_ID)"
+[[ -n "$captured_target" && "$prepared_target" == "$captured_target" ]] || \
+    die "build tools changed the target ABI; discard this rootfs and investigate the pacman transaction"
 
 printf '\nRootfs preparation passed. Build with:\n'
 printf '  /repo/build/build-private-bundle.sh\n'

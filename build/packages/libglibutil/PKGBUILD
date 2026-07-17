@@ -1,0 +1,22 @@
+pkgname=libglibutil
+pkgver=1.0.80
+pkgrel=1
+pkgdesc='Library of GLib utilities'
+arch=('x86_64')
+url='https://github.com/sailfishos/libglibutil'
+license=('BSD-3-Clause')
+depends=('glib2')
+options=('!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz")
+sha256sums=('ab4728157b68f84492512c7a451fe193924ae2aac3aa851de06eb3fd5acdc714')
+
+build() {
+  cd "$pkgname-$pkgver"
+  make release pkgconfig KEEP_SYMBOLS=1
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" LIBDIR=usr/lib install-dev
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

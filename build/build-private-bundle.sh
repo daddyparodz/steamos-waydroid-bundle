@@ -12,12 +12,14 @@ set_build_report_stage preflight
 
 require_steamos_root
 
-for command_name in git meson ninja patchelf pkg-config readelf ldd; do
+for command_name in git makepkg meson ninja patchelf pkg-config readelf ldd; do
     require_command "$command_name"
 done
 
 [[ -r "$TARGET_FINGERPRINT_FILE" ]] || \
     die "target fingerprint is missing: $TARGET_FINGERPRINT_FILE"
+[[ ${BUNDLE_VERSION:-} =~ ^[A-Za-z0-9._-]+$ ]] || \
+    die "unsafe or missing BUNDLE_VERSION"
 
 required_system_headers=(
     stdio.h
@@ -40,6 +42,10 @@ if (( ${#missing_system_headers[@]} > 0 )); then
 fi
 
 required_pkg_config_dependencies=(
+    glib-2.0
+    gobject-2.0
+    libpcre2-8
+    sysprof-capture-4
     wayland-server
     libdrm
     xkbcommon
@@ -126,6 +132,14 @@ archive_incomplete_output() {
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 
+set_build_report_stage host-packages
+mkdir -p "$REPORT_ROOT"
+HOST_PACKAGE_LOG="$REPORT_ROOT/$BUNDLE_VERSION-host-packages.log"
+: > "$HOST_PACKAGE_LOG"
+HOST_PACKAGE_LOG="$HOST_PACKAGE_LOG" \
+    PACKAGE_OUTPUT_ROOT="$OUTPUT_ROOT/.host-packages-$BUNDLE_VERSION" \
+    "$SCRIPT_DIR/build-host-packages.sh"
+
 set_build_report_stage source-checkout
 clone_at_tag \
     https://gitlab.freedesktop.org/wlroots/wlroots.git \
@@ -205,10 +219,12 @@ install -d \
     "$STAGING_ROOT/bin" \
     "$STAGING_ROOT/lib" \
     "$STAGING_ROOT/licenses" \
+    "$STAGING_ROOT/packages" \
     "$STAGING_ROOT/tools"
 install -m 0755 "$PRIVATE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
 install -m 0755 "$PRIVATE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
 cp -a "$PRIVATE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
+cp -a "$OUTPUT_ROOT/.host-packages-$BUNDLE_VERSION"/. "$STAGING_ROOT/packages/"
 install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env"
 install -m 0755 \
     "$SCRIPT_DIR/check-bundle-target.sh" \

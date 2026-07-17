@@ -1,9 +1,12 @@
-# Personal private Cage build
+# Personal target-built Waydroid bundle
 
-This directory builds Cage, wlroots, and wlr-randr against a read-only copy of
-the target Steam Deck's SteamOS userspace. The resulting bundle is installed
-under the `deck` user's home directory. It must never contain or replace
-SteamOS display libraries.
+This directory builds Cage, wlroots, wlr-randr, libglibutil, libgbinder,
+python-gbinder, and Waydroid against a copy of the target Steam Deck's SteamOS
+userspace. Cage and its private wlroots remain under the `deck` user's home.
+The four target-built pacman packages are carried in the verified bundle and
+are installed into the SteamOS deployment by the installer or repair mode.
+The repository contains recipes and immutable source checksums, not prebuilt
+pacman archives.
 
 The current validated host baseline is SteamOS 3.8.16 Stable on x86-64 with:
 
@@ -39,14 +42,14 @@ Fedora workstation under `BUILD_WORK_ROOT`. The rootfs copy is normalised to
 unchanged.
 
 Before copying, the script captures SteamOS `VERSION_ID`, `BUILD_ID`, the
-kernel, and the installed versions of the userspace packages Cage/wlroots link
-against, including glibc, Wayland, libdisplay-info, libdrm, Mesa, pixman,
+kernel, and the installed versions of the relevant userspace packages. These
+include glibc, GLib, Python, Wayland, libdisplay-info, libdrm, Mesa, pixman,
 libglvnd, libudev/systemd, libinput, libxkbcommon, seatd, hwdata, and XCB. It
 stores their deterministic compatibility hash in `target-fingerprint.env` and
 derives a name such as:
 
 ```text
-steamos-3.8.16-b20260716.1-wlroots0.18.2-r1
+steamos-3.8.16-b20260716.1-wlroots0.18.2-r2
 ```
 
 Each release/ABI target gets an independent Fedora snapshot and rootfs under
@@ -79,10 +82,18 @@ Inside the copied SteamOS rootfs, run the preparation script. Do not run
 /repo/build/prepare-build-rootfs.sh
 ```
 
+For an automated preparation followed immediately by the build, Fedora may
+instead invoke the rootfs with:
+
+```bash
+build/enter-build-rootfs.sh /usr/bin/bash /repo/build/run-private-build-in-rootfs.sh
+```
+
 The script initialises the copied rootfs CA trust and package keyring, installs
-the build tools, restores the development payloads described below, and checks
-their metadata. Pacman remains interactive so each transaction can be
-reviewed. It refuses the development-payload transaction if a repository
+the build tools (including Cython and setuptools), restores the development
+payloads described below, and checks their metadata. Pacman remains interactive
+so each transaction can be reviewed. It refuses the development-payload
+transaction if a repository
 version differs from the installed version recorded in the copied Deck package
 database. If pacman nevertheless proposes replacing or upgrading glibc,
 Wayland, Mesa, or libdisplay-info, cancel it and investigate.
@@ -94,7 +105,7 @@ the same package versions (the underlying command is shown for reference):
 
 ```bash
 pacman -S \
-    glibc linux-api-headers \
+    glibc linux-api-headers glib2 libsysprof-capture pcre2 python \
     wayland libdisplay-info libdrm libxkbcommon pixman mesa libglvnd \
     systemd-libs seatd libinput hwdata libxcb xcb-util-renderutil \
     libffi libxau libxdmcp xorgproto
@@ -110,6 +121,7 @@ The script finishes by confirming the equivalent of:
 
 ```bash
 pkg-config --modversion \
+    glib-2.0 gobject-2.0 libpcre2-8 sysprof-capture-4 \
     wayland-server libdisplay-info libdrm xkbcommon pixman-1 \
     egl gbm glesv2 libudev libseat libinput xcb-renderutil
 ```
@@ -122,7 +134,18 @@ Still inside the rootfs:
 /repo/build/build-private-bundle.sh
 ```
 
-The build stops unless wlroots needs `libdisplay-info.so.3`, Cage resolves the
+The build first creates the four pacman packages in dependency order:
+
+```text
+libglibutil -> libgbinder -> python-gbinder -> waydroid
+```
+
+Each upstream release archive is checked against `build/packages/sources.lock`.
+The two C libraries are installed only into the disposable copied rootfs so the
+next package can compile; the live Deck is not touched. The build verifies the
+pkg-config metadata and imports the compiled `gbinder` module using the copied
+target's Python. It then builds the private compositor. The build stops unless
+wlroots needs `libdisplay-info.so.3`, Cage resolves the
 private wlroots through a relative RUNPATH, and the bundle excludes host system
 libraries. It also rejects libliftoff and Vulkan dependencies because neither
 is required for the narrow personal runtime. The wlroots configuration makes
@@ -141,11 +164,12 @@ exit
 The bundle will be available under its derived target name, for example:
 
 ```text
-~/steamos-waydroid-personal/out/steamos-3.8.16-b20260716.1-wlroots0.18.2-r1/
+~/steamos-waydroid-personal/out/steamos-3.8.16-b20260716.1-wlroots0.18.2-r2/
 ```
 
-It contains the captured target fingerprint and a checker used again on the
-real Deck. A different SteamOS `BUILD_ID` creates a separate directory instead
+It contains the captured target fingerprint, the four target-built pacman
+packages and source lock, and a checker used again on the real Deck. A
+different SteamOS `BUILD_ID`, GLib, or Python creates a separate target instead
 of replacing an earlier working build.
 
 ## 5. Publish the private artifact on Fedora
@@ -155,6 +179,9 @@ Package the verified directory as an immutable archive plus a SHA-256 file:
 ```bash
 build/publish-private-bundle.sh
 ```
+
+Publishing requires a clean Git worktree so the manifest's source revision
+identifies the exact recipes and compatibility patch used for the packages.
 
 The output is placed under `PUBLISH_ROOT`, which defaults to
 `~/steamos-waydroid-personal/publish`. Source code remains in Git; target-built
@@ -210,19 +237,23 @@ build/install-private-bundle-on-deck.sh --allow-target-mismatch
 The ELF verifier still runs in override mode. `ARTIFACT_SOURCE` may later be an
 HTTPS GitHub Release directory.
 
-The older `deploy-private-bundle.sh` remains available as a Fedora-initiated
-push helper, but it is not part of this separated personal workflow.
-
 ## 8. Run the installer locally
 
-The installer must be started locally from Konsole in SteamOS Desktop Mode so
-graphical prompts and Steam shortcut creation use the real desktop session. It
-ensures a matching private bundle is active before requesting privileged
-SteamOS changes:
+The installer or repair mode must be started locally from Konsole in SteamOS
+Desktop Mode so graphical prompts and Steam shortcut creation use the real
+desktop session. It ensures a matching private bundle is active before
+requesting privileged SteamOS changes:
 
 ```bash
 cd ~/steamos-waydroid-personal-installer
 ./steamos-waydroid-installer.sh
+```
+
+After an atomic SteamOS update, repair reinstalls the target-built host package
+set from the matching bundle without recreating or modifying Android data:
+
+```bash
+./steamos-waydroid-installer.sh --repair
 ```
 
 The installer and Game Mode launcher repeat the exact target check. After a

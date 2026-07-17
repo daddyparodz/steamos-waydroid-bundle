@@ -18,7 +18,7 @@ fi
 
 BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-$HOME/steamos-waydroid-personal}"
 BUNDLE_VERSION="${CALLER_BUNDLE_VERSION:-${BUNDLE_VERSION:-auto}}"
-BUNDLE_REVISION="${BUNDLE_REVISION:-r1}"
+BUNDLE_REVISION="${BUNDLE_REVISION:-r2}"
 WLROOTS_VERSION="${WLROOTS_VERSION:-0.18.2}"
 PUBLISH_ROOT="${PUBLISH_ROOT:-$BUILD_WORK_ROOT/publish}"
 TARGET_FINGERPRINT_FILE="${TARGET_FINGERPRINT_FILE:-$BUILD_WORK_ROOT/target-fingerprint.env}"
@@ -77,6 +77,11 @@ write_build_failure_report() {
         if [[ -r "$TARGET_FINGERPRINT_FILE" ]]; then
             printf '\n## Target fingerprint\n\n```text\n'
             cat "$TARGET_FINGERPRINT_FILE"
+            printf '```\n'
+        fi
+        if [[ -r "$REPORT_ROOT/${BUNDLE_VERSION:-unknown}-host-packages.log" ]]; then
+            printf '\n## Host package build log\n\n```text\n'
+            tail -n 200 "$REPORT_ROOT/${BUNDLE_VERSION:-unknown}-host-packages.log"
             printf '```\n'
         fi
         printf '\n## Meson log tails\n'

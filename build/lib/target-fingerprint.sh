@@ -27,7 +27,7 @@ fingerprint_value() {
 collect_target_fingerprint() {
     local output_file="$1"
     local os_version build_id kernel_release
-    local glibc wayland display_info libdrm mesa libinput xkbcommon seatd
+    local glibc glib2 python wayland display_info libdrm mesa libinput xkbcommon seatd
     local pixman libglvnd systemd_package hwdata libxcb xcb_renderutil
     local abi_payload abi_sha256 target_environment suggested
 
@@ -42,6 +42,8 @@ collect_target_fingerprint() {
     build_id="$(fingerprint_clean_value "${BUILD_ID:-unknown}")"
     kernel_release="$(fingerprint_clean_value "$(uname -r)")"
     glibc="$(fingerprint_package_version glibc)"
+    glib2="$(fingerprint_package_version glib2)"
+    python="$(fingerprint_package_version python)"
     wayland="$(fingerprint_package_version wayland)"
     display_info="$(fingerprint_package_version libdisplay-info)"
     libdrm="$(fingerprint_package_version libdrm)"
@@ -57,6 +59,8 @@ collect_target_fingerprint() {
     xcb_renderutil="$(fingerprint_package_version xcb-util-renderutil)"
 
     abi_payload="glibc=$glibc
+glib2=$glib2
+python=$python
 wayland=$wayland
 libdisplay_info=$display_info
 libdrm=$libdrm
@@ -77,11 +81,13 @@ xcb_util_renderutil=$xcb_renderutil"
     suggested="$(fingerprint_clean_value "$suggested")"
 
     cat > "$output_file" <<EOF
-FINGERPRINT_FORMAT=1
+FINGERPRINT_FORMAT=2
 STEAMOS_VERSION_ID=$os_version
 STEAMOS_BUILD_ID=$build_id
 KERNEL_RELEASE=$kernel_release
 PKG_GLIBC=$glibc
+PKG_GLIB2=$glib2
+PKG_PYTHON=$python
 PKG_WAYLAND=$wayland
 PKG_LIBDISPLAY_INFO=$display_info
 PKG_LIBDRM=$libdrm

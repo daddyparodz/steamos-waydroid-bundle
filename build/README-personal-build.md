@@ -33,6 +33,11 @@ build/sync-steamos-rootfs.sh
 The Deck is only read over SSH. A root-owned build root is materialised on the
 Fedora workstation under `BUILD_WORK_ROOT`.
 
+The sync deliberately excludes root-only CUPS, NFS, D-Bus, SSH, ModemManager,
+and SteamOS factory helper files which the `deck` account cannot read. None is
+part of the compiler, linker, or Cage/wlroots runtime ABI. If an interrupted
+sync is rerun, rsync reuses the files already copied.
+
 ## 3. Enter and prepare the copied rootfs
 
 ```bash

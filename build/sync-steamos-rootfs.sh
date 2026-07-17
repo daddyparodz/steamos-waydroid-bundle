@@ -30,6 +30,14 @@ ssh "$DECK_HOST" 'test "$(id -un)" = deck'
 
 printf 'Copying /usr from the Deck (read-only source)...\n'
 rsync -aH --info=progress2 \
+    --exclude='/bin/cupsd' \
+    --exclude='/bin/groupmems' \
+    --exclude='/bin/mount.nfs' \
+    --exclude='/lib/dbus-daemon-launch-helper' \
+    --exclude='/lib/cups/backend/cups-pdf' \
+    --exclude='/lib/ssh/ssh-keysign' \
+    --exclude='/share/ModemManager/' \
+    --exclude='/share/factory/' \
     "$DECK_HOST:/usr/" \
     "$SNAPSHOT_ROOT/usr/"
 
@@ -70,4 +78,3 @@ sudo ln -sfn usr/lib "$ROOTFS_ROOT/lib64"
 
 printf '\nSteamOS build root created at:\n  %s\n' "$ROOTFS_ROOT"
 printf 'The live Steam Deck was only read over SSH.\n'
-

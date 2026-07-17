@@ -30,6 +30,9 @@ source /etc/os-release
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 
+# shellcheck source=lib/target-fingerprint.sh
+source "$SCRIPT_DIR/lib/target-fingerprint.sh"
+
 ARTIFACT_SOURCE="${ARTIFACT_SOURCE:-}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-}"
 [[ -n "$ARTIFACT_SOURCE" ]] || die "ARTIFACT_SOURCE is not configured"
@@ -76,9 +79,28 @@ manifest_value() {
 }
 
 if [[ "$BUNDLE_VERSION" == auto ]]; then
-    printf 'Resolving the latest published target bundle...\n'
-    fetch_file latest.manifest
-    BUNDLE_VERSION="$(manifest_value "$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+    printf 'Resolving the published bundle for this exact SteamOS target...\n'
+    CURRENT_FINGERPRINT="$DOWNLOAD_ROOT/current-target-fingerprint.env"
+    collect_target_fingerprint "$CURRENT_FINGERPRINT"
+    CURRENT_TARGET_ENVIRONMENT="$(fingerprint_value \
+        "$CURRENT_FINGERPRINT" TARGET_ENVIRONMENT_ID)"
+    BUNDLE_VERSION=""
+    if fetch_file targets.manifest; then
+        BUNDLE_VERSION="$(awk -F '[=|]' -v wanted="$CURRENT_TARGET_ENVIRONMENT" \
+            '$1 == "target" && $2 == wanted {print $3; exit}' \
+            "$DOWNLOAD_ROOT/targets.manifest")"
+    else
+        printf 'Target catalog is not published yet; checking the legacy latest pointer.\n' >&2
+        fetch_file latest.manifest
+        latest_target="$(fingerprint_value \
+            "$DOWNLOAD_ROOT/latest.manifest" TARGET_ENVIRONMENT_ID)"
+        if [[ "$latest_target" == "$CURRENT_TARGET_ENVIRONMENT" ]]; then
+            BUNDLE_VERSION="$(manifest_value \
+                "$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+        fi
+    fi
+    [[ -n "$BUNDLE_VERSION" ]] || \
+        die "no published private bundle matches target $CURRENT_TARGET_ENVIRONMENT"
 fi
 [[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe BUNDLE_VERSION"
 

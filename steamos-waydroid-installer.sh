@@ -44,8 +44,16 @@ ANDROID13_IMG_HASH=aafdd4ef69e8a11d64ba02e881c1697d6a3ee4fa4c1fb97e33abc6da5f4bb
 
 echo script version: $SCRIPT_VERSION_SHA
 
-# The private compositor bundle must already be deployed and verified before
-# this installer performs any privileged SteamOS integration.
+# Select an already-installed exact target bundle, or fetch the matching
+# published artifact, before this installer performs privileged integration.
+if ! "$WORKING_DIR/build/ensure-private-bundle-on-deck.sh"
+then
+	echo Unable to install or activate a private Cage bundle for this SteamOS target.
+	echo Check .deck-config.env and the Fedora artifact source, then run the installer again.
+	exit 1
+fi
+
+# Defence in depth: repeat the active-bundle verification before continuing.
 if [ ! -x "$PRIVATE_CAGE" ] || [ ! -x "$PRIVATE_WLR_RANDR" ] || \
 	[ ! -x "$PRIVATE_TARGET_CHECK" ] || \
 	[ ! -x "$PRIVATE_COMPATIBILITY_REPORT" ] || \
@@ -53,7 +61,7 @@ if [ ! -x "$PRIVATE_CAGE" ] || [ ! -x "$PRIVATE_WLR_RANDR" ] || \
 then
 	echo Private Cage bundle is missing or unverified.
 	echo Expected bundle: $PRIVATE_BUNDLE
-	echo Run build/deploy-private-bundle.sh from the Fedora workstation first.
+	echo Run build/ensure-private-bundle-on-deck.sh and inspect its error.
 	exit 1
 fi
 target_check_args=("$PRIVATE_BUNDLE")

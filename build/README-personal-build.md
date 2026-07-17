@@ -159,9 +159,11 @@ build/publish-private-bundle.sh
 The output is placed under `PUBLISH_ROOT`, which defaults to
 `~/steamos-waydroid-personal/publish`. Source code remains in Git; target-built
 binaries remain in this separate artifact store.
-`latest.manifest` points Deck-side `BUNDLE_VERSION="auto"` at the most recently
-published immutable artifact; versioned manifests remain available for
-rollback.
+`targets.manifest` maps every retained exact SteamOS target to its preferred
+published bundle. Deck-side `BUNDLE_VERSION="auto"` therefore selects a target
+match rather than simply using the newest artifact. `latest.manifest` remains
+as an informational pointer, and versioned manifests remain available for
+manual bundle management.
 
 ## 6. Clone the source on the Deck
 
@@ -176,7 +178,7 @@ git clone \
     ~/steamos-waydroid-personal-installer
 ```
 
-## 7. Pull, verify and activate the artifact on the Deck
+## 7. Configure Deck artifact access
 
 From the Deck checkout:
 
@@ -186,18 +188,20 @@ cp build/deck-config.example.env .deck-config.env
 ```
 
 The default `ARTIFACT_SOURCE` uses the `fedora-build` SSH alias and the default
-Fedora publish directory. Adjust it if either differs, then run:
+Fedora publish directory. Adjust it if either differs. The main installer will
+first reuse any installed bundle matching the running SteamOS target; if none
+matches, it automatically runs the equivalent of:
 
 ```bash
 build/install-private-bundle-on-deck.sh
 ```
 
-The Deck pulls the archive, checks its SHA-256 file, rejects unsafe archive
-paths, extracts through a staging directory, runs the ELF verifier against the
-real SteamOS host, compares the embedded release and ABI fingerprint, and
-switches `current` only after every check passes. Version directories are
-immutable. A target mismatch is rejected by default. For a deliberate
-compatibility experiment only, use:
+The Deck pulls only the matching archive, checks its SHA-256 file, rejects
+unsafe archive paths, extracts through a staging directory, runs the ELF
+verifier against the real SteamOS host, compares the embedded release and ABI
+fingerprint, and switches `current` only after every check passes. Version
+directories are immutable. A target mismatch is rejected by default. For a
+deliberate compatibility experiment only, use:
 
 ```bash
 build/install-private-bundle-on-deck.sh --allow-target-mismatch
@@ -211,18 +215,21 @@ push helper, but it is not part of this separated personal workflow.
 
 ## 8. Run the installer locally
 
-The installer itself must be started locally from Konsole in SteamOS Desktop
-Mode so graphical prompts and Steam shortcut creation use the real desktop
-session:
+The installer must be started locally from Konsole in SteamOS Desktop Mode so
+graphical prompts and Steam shortcut creation use the real desktop session. It
+ensures a matching private bundle is active before requesting privileged
+SteamOS changes:
 
 ```bash
 cd ~/steamos-waydroid-personal-installer
 ./steamos-waydroid-installer.sh
 ```
 
-The installer and Game Mode launcher repeat the exact target check. A SteamOS
-update therefore stops an older bundle from being used silently. Re-run the
-snapshot, build, publish, and Deck install stages for the new `BUILD_ID`; older
+The installer and Game Mode launcher repeat the exact target check. After a
+SteamOS rollback, the installer automatically reactivates a compatible bundle
+already retained under `~/.local/opt/steamos-waydroid/builds`. If none is
+installed, it downloads the catalog entry for that exact target. Re-run the
+snapshot, build and publish stages when no matching artifact exists; older
 version directories remain available for rollback.
 
 ## Diagnostic reports

@@ -71,7 +71,8 @@ package versions:
 ```bash
 pacman -S \
     wayland libdisplay-info libdrm libxkbcommon pixman mesa libglvnd \
-    systemd seatd libinput hwdata libxcb xcb-util-renderutil
+    systemd-libs seatd libinput hwdata libxcb xcb-util-renderutil \
+    libffi libxau libxdmcp
 ```
 
 Do not use `--needed` for this command; these packages are already registered

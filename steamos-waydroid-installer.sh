@@ -300,7 +300,7 @@ Exec=${launcher_script}
 Path=${logged_in_home}/Android_Waydroid
 Type=Application
 Terminal=false
-Icon=application-default-icon
+Icon=${logged_in_home}/Android_Waydroid/icons/waydroid/icon.png
 EOF
 			chmod +x "$TMP_DESKTOP"
 			if steamos-add-to-steam "$TMP_DESKTOP"

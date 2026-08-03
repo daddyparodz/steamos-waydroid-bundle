@@ -71,36 +71,6 @@ cleanup_exit () {
 	exit
 }
 
-prepare_custom_image_location () {
-# call this function when deploying a custom Android image
-# custom Android images needs to be placed in /etc/waydroid-extra/images
-# this will create a symlink to /etc/waydroid-extra/images
-echo -e "$current_password\n" | sudo mkdir /etc/waydroid-extra &> /dev/null
-echo -e "$current_password\n" | sudo -S ln -s /var/lib/waydroid/custom /etc/waydroid-extra/images &> /dev/null
-}
-
-download_image () {
-	local src=$1
-	local src_hash=$2
-	local dest=$3
-	local dest_zip="$dest.zip"
-	local name=$4
-	local hash
-
-	echo Downloading $name image
-	echo -e "$current_password\n" | sudo -S curl -o $dest_zip $src -L
-	hash=$(sha256sum "$dest_zip" | awk '{print $1}')
-	# Verify the hash
-	if [[ "$hash" != "$src_hash" ]]; then
-		echo sha256 hash mismatch for $name image, indicating a corrupted download. This might be due to a network error, you can try again.
-		cleanup_exit
-	fi
-
-	echo Extracting Archive
-	echo -e "$current_password\n" | sudo -S unzip -o $dest -d $dest
-	echo -e "$current_password\n" | sudo -S rm $dest_zip
-}
-
 # apply custom config for controller detection, root and fingerprint spoof
 apply_android_custom_config () {
 
@@ -131,20 +101,6 @@ install_android_extras () {
 	echo "$ARM_Choice installation started:"
 	echo -e "$current_password\n" | sudo -S $WAYDROID_SCRIPT_DIR/venv/bin/python3 $WAYDROID_SCRIPT_DIR/main.py -a13 install {$ARM_Choice,widevine}
 
-	echo casualsnek / aleasto waydroid_script done. $ARM_Choice installed.
-	echo -e "$current_password\n" | sudo -S rm -rf $WAYDROID_SCRIPT_DIR
-}
-
-# install arm translation layer from casualsnek / aleasto waydroid_script. this also includes GAPPS. use this for custom waydroid images
-install_android_extras_custom () {
-
-	# casualsnek / aleasto waydroid_script - install libndk / libhoudini, widevine and GAPPS
-	python3 -m venv $WAYDROID_SCRIPT_DIR/venv
-	$WAYDROID_SCRIPT_DIR/venv/bin/pip install -r $WAYDROID_SCRIPT_DIR/requirements.txt &> /dev/null
-
-	echo "$ARM_Choice installation started:"
-	echo -e "$current_password\n" | sudo -S $WAYDROID_SCRIPT_DIR/venv/bin/python3 $WAYDROID_SCRIPT_DIR/main.py -a13 install {$ARM_Choice,widevine,gapps}
-	
 	echo casualsnek / aleasto waydroid_script done. $ARM_Choice installed.
 	echo -e "$current_password\n" | sudo -S rm -rf $WAYDROID_SCRIPT_DIR
 }

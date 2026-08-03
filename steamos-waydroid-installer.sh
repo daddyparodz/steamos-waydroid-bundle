@@ -94,12 +94,6 @@ WAYDROID_IMAGE=$HOME/Android_Waydroid/waydroid.img
 # android TV builds
 ANDROID13_TV_OTA=https://ota.supechicken666.dev
 
-# custom Android 13 builds
-ANDROID13_IMG=https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer/releases/download/Android13-PvZ2/lineage-20-20251210-UNOFFICIAL-10MinuteSteamDeckGamer-Waydroid.zip
-
-# custom Android 13 hash
-ANDROID13_IMG_HASH=aafdd4ef69e8a11d64ba02e881c1697d6a3ee4fa4c1fb97e33abc6da5f4bb6d4
-
 echo script version: $SCRIPT_VERSION_SHA
 if [ "$REPAIR_MODE" = true ]
 then

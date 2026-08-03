@@ -285,7 +285,9 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 If a matching Waydroid or Nested Desktop Steam shortcut already exists, the
 installer shows the matches in Konsole and offers three choices: add another
 shortcut, delete all matches and replace them with one clean shortcut using the
-bundled artwork, or do nothing. Delete/Replace is the default.
+bundled artwork, or do nothing. Delete/Replace is the default. That option
+gracefully restarts Steam before removal so its in-memory shortcut list cannot
+restore the deleted entries.
 
 Advanced users can change the artifact source, but should do so only when they
 fully trust it: bundle packages are installed into SteamOS as root.

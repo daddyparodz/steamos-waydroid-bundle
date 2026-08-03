@@ -221,16 +221,17 @@ shortcut_should_be_created () {
 	shortcut_target=$1
 	shortcut_label=$2
 	SHORTCUT_KEEP_DUPLICATES=false
-	python3 "$WORKING_DIR/extras/icon.py" has "$shortcut_target"
+	SHORTCUT_MATCH_COUNT=$(python3 "$WORKING_DIR/extras/icon.py" count "$shortcut_target")
 	shortcut_status=$?
-	case "$shortcut_status" in
-		0) ;;
-		1) return 0 ;;
-		*)
-			echo "Warning: Steam shortcuts could not be inspected; $shortcut_label will not be changed." >&2
-			return 1
-			;;
-	esac
+	if [ "$shortcut_status" -ne 0 ] || ! [[ "$SHORTCUT_MATCH_COUNT" =~ ^[0-9]+$ ]]
+	then
+		echo "Warning: Steam shortcuts could not be inspected; $shortcut_label will not be changed." >&2
+		return 1
+	fi
+	if [ "$SHORTCUT_MATCH_COUNT" -eq 0 ]
+	then
+		return 0
+	fi
 
 	echo
 	echo "Matching $shortcut_label Steam shortcut(s):"
@@ -242,7 +243,7 @@ shortcut_should_be_created () {
 		--column="Action" \
 		--column="Description" \
 		FALSE "Add new shortcut" "Keep all existing shortcuts and add another" \
-		TRUE "Delete/Replace" "Remove all matches and create one new shortcut" \
+		TRUE "Delete/Replace" "Restart Steam, remove all matches, and create one new shortcut" \
 		FALSE "Do nothing" "Leave shortcuts and artwork unchanged" \
 		--width=760 --height=300) || shortcut_choice="Do nothing"
 
@@ -253,11 +254,17 @@ shortcut_should_be_created () {
 			return 0
 			;;
 		"Delete/Replace")
+			if ! stop_steam_for_shortcut_edit
+			then
+				echo "Warning: Steam did not stop; $shortcut_label was left unchanged." >&2
+				return 1
+			fi
 			if ! python3 "$WORKING_DIR/extras/icon.py" remove "$shortcut_target"
 			then
 				echo "Warning: $shortcut_label could not be removed; it will not be recreated." >&2
 				return 1
 			fi
+			SHORTCUT_MATCH_COUNT=0
 			return 0
 			;;
 		"Do nothing"|"")
@@ -269,6 +276,41 @@ shortcut_should_be_created () {
 			return 1
 			;;
 	esac
+}
+
+stop_steam_for_shortcut_edit () {
+	if ! pgrep -x steam > /dev/null
+	then
+		return 0
+	fi
+
+	echo "Stopping Steam so removed shortcuts cannot be restored from its in-memory library..."
+	steam -shutdown > /dev/null 2>&1 || true
+	steam_stop_attempt=0
+	while pgrep -x steam > /dev/null && [ "$steam_stop_attempt" -lt 45 ]
+	do
+		sleep 1
+		steam_stop_attempt=$((steam_stop_attempt + 1))
+	done
+	! pgrep -x steam > /dev/null
+}
+
+wait_for_new_shortcut () {
+	shortcut_target=$1
+	previous_count=$2
+	shortcut_wait_attempt=0
+	while [ "$shortcut_wait_attempt" -lt 45 ]
+	do
+		current_count=$(python3 "$WORKING_DIR/extras/icon.py" count "$shortcut_target" 2> /dev/null) || \
+			current_count=""
+		if [[ "$current_count" =~ ^[0-9]+$ ]] && [ "$current_count" -gt "$previous_count" ]
+		then
+			return 0
+		fi
+		sleep 1
+		shortcut_wait_attempt=$((shortcut_wait_attempt + 1))
+	done
+	return 1
 }
 
 repair_game_mode_shortcuts () {
@@ -305,17 +347,21 @@ EOF
 			chmod +x "$TMP_DESKTOP"
 			if steamos-add-to-steam "$TMP_DESKTOP"
 			then
-				sleep 3
-				shortcut_reconcile_args=(
+				if wait_for_new_shortcut waydroid "$SHORTCUT_MATCH_COUNT"
+				then
+					shortcut_reconcile_args=(
 					reconcile waydroid
 					--artwork-dir "$WORKING_DIR/extras/icons/waydroid"
-				)
-				if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
-				then
-					shortcut_reconcile_args+=(--keep-duplicates)
+					)
+					if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
+					then
+						shortcut_reconcile_args+=(--keep-duplicates)
+					fi
+					python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
+						echo "Warning: Waydroid artwork could not be installed." >&2
+				else
+					echo "Warning: Steam did not create the Waydroid shortcut within 45 seconds." >&2
 				fi
-				python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
-					echo "Warning: Waydroid artwork could not be installed." >&2
 			else
 				echo "Warning: Waydroid shortcut could not be created." >&2
 			fi
@@ -327,17 +373,21 @@ EOF
 	then
 		if steamos-add-to-steam /usr/bin/steamos-nested-desktop &> /dev/null
 		then
-			sleep 3
-			shortcut_reconcile_args=(
+			if wait_for_new_shortcut nested-desktop "$SHORTCUT_MATCH_COUNT"
+			then
+				shortcut_reconcile_args=(
 				reconcile nested-desktop
 				--artwork-dir "$WORKING_DIR/extras/icons/nested-desktop"
-			)
-			if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
-			then
-				shortcut_reconcile_args+=(--keep-duplicates)
+				)
+				if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
+				then
+					shortcut_reconcile_args+=(--keep-duplicates)
+				fi
+				python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
+					echo "Warning: Nested Desktop artwork could not be installed." >&2
+			else
+				echo "Warning: Steam did not create the Nested Desktop shortcut within 45 seconds." >&2
 			fi
-			python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
-				echo "Warning: Nested Desktop artwork could not be installed." >&2
 		else
 			echo "Warning: Nested Desktop shortcut could not be created." >&2
 		fi

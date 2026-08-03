@@ -347,7 +347,7 @@ def remove_target(path, target):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("has", "describe", "reconcile", "remove"), nargs="?",
+    parser.add_argument("action", choices=("has", "count", "describe", "reconcile", "remove"), nargs="?",
                         default="reconcile")
     parser.add_argument("target", choices=tuple(TARGETS), nargs="?", default="waydroid")
     parser.add_argument("--artwork-dir", type=Path)
@@ -361,6 +361,9 @@ def main():
         path = shortcuts_path(args.home)
         if args.action == "has":
             return 0 if matching_shortcuts(path, args.target) else 1
+        if args.action == "count":
+            print(len(matching_shortcuts(path, args.target)))
+            return 0
         if args.action == "describe":
             return describe_shortcuts(path, args.target)
         if args.action == "remove":

@@ -1,11 +1,18 @@
 #!/bin/bash
 
 REPAIR_MODE=false
+CONFIGURE_ARTIFACTS=false
+if [ "$#" -gt 1 ]
+then
+	echo "usage: $0 [--repair | --configure-artifacts]" >&2
+	exit 1
+fi
 case "${1:-}" in
 	"") ;;
 	--repair) REPAIR_MODE=true ;;
+	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
 	*)
-		echo "usage: $0 [--repair]" >&2
+		echo "usage: $0 [--repair | --configure-artifacts]" >&2
 		exit 1
 		;;
 esac
@@ -31,6 +38,25 @@ STEAMOS_VERSION=$(cat /etc/os-release | grep -i version_id | cut -d "=" -f2 | cu
 BASE_VERSION=3.8
 STEAMOS_BRANCH=$(steamos-select-branch -c)
 WORKING_DIR=$(pwd)
+DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
+ARTIFACT_CONFIGURATOR=$WORKING_DIR/build/configure-deck-artifacts.sh
+if [ "$CONFIGURE_ARTIFACTS" = true ]
+then
+	if ! "$ARTIFACT_CONFIGURATOR" --force
+	then
+		echo Artifact configuration was not completed. >&2
+		exit 1
+	fi
+	exit 0
+elif [ ! -f "$DECK_CONFIG_FILE" ]
+then
+	echo No Deck artifact configuration was found. Starting first-run setup.
+	if ! "$ARTIFACT_CONFIGURATOR"
+	then
+		echo Artifact configuration was not completed. >&2
+		exit 1
+	fi
+fi
 LOGFILE=$WORKING_DIR/logfile
 WAYDROID_SCRIPT=https://github.com/casualsnek/waydroid_script.git
 WAYDROID_SCRIPT_DIR=$(mktemp -d)/waydroid_script
@@ -79,7 +105,7 @@ fi
 if ! "$WORKING_DIR/build/ensure-private-bundle-on-deck.sh"
 then
 	echo Unable to install or activate a private Cage bundle for this SteamOS target.
-	echo Check .deck-config.env and the Fedora artifact source, then run the installer again.
+	echo Check .deck-config.env and its artifact source, then run the installer again.
 	exit 1
 fi
 

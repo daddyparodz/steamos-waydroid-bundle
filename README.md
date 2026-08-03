@@ -275,7 +275,10 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
    git clone --depth=1 -b testing https://github.com/ryanrudolfoba/steamos-waydroid-installer
    ```
 
-3. Execute the script! \
+3. Execute the script. On its first run it will ask where compatible binary
+   bundles should be downloaded from and which bundle version to use. Press
+   Enter to accept the detected/recommended defaults. The selection is saved
+   locally in `.deck-config.env` and is not committed to Git. \
 
    ```sh
    cd ~/steamos-waydroid-installer
@@ -285,6 +288,12 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 
 4. Script will automatically install Waydroid together with the custom config. Install will roughly take around 5mins depending on the internet connection speed.
 5. Once done exit the script and go back to Game Mode.
+
+To change the artifact source later, run:
+
+```sh
+./steamos-waydroid-installer.sh --configure-artifacts
+```
 
 **Launching Waydroid**
 1. Go to Game Mode.

@@ -229,15 +229,26 @@ set the local branch's upstream to `origin/personal-safe-architecture`.
 
 ## 7. Configure Deck artifact access
 
-From the Deck checkout:
+On the first normal or repair run, the installer starts an interactive setup
+when `.deck-config.env` is absent. It offers public GitHub, authenticated
+private GitHub, SSH/rsync, and public HTTP(S) sources, with
+`BUNDLE_VERSION="auto"` as the recommended default. To configure the source
+without starting installation, or to replace an existing configuration, run:
 
 ```bash
 cd ~/steamos-waydroid-personal-installer
-cp build/deck-config.example.env .deck-config.env
+./steamos-waydroid-installer.sh --configure-artifacts
 ```
 
-The example defaults to an authenticated private GitHub Release. Install GitHub
-CLI in the `deck` user's PATH, run `gh auth login` on the Deck, and set:
+The wizard detects an `OWNER/REPOSITORY` default from a GitHub `origin` remote
+when possible. It writes the machine-local configuration atomically with mode
+`0600` and never replaces it during an ordinary installer run. The tracked
+`build/deck-config.example.env` remains available for non-interactive manual
+setup.
+
+For an authenticated private GitHub Release, install GitHub CLI in the `deck`
+user's PATH and run `gh auth login` on the Deck before selecting that option.
+The resulting configuration is:
 
 ```bash
 ARTIFACT_SOURCE="github-release"
@@ -249,8 +260,8 @@ BUNDLE_VERSION="auto"
 Git repository SSH authentication and private Release authentication are
 separate: an SSH key permits `git pull`, while the Deck's GitHub CLI login
 permits Release asset downloads. As a fallback, `ARTIFACT_SOURCE` may instead
-use the `fedora-build` SSH alias and Fedora publish directory shown in the
-example configuration.
+use an SSH alias and Fedora publish directory. A public GitHub Release uses its
+ordinary HTTPS download URL and does not require `gh` authentication.
 
 The main installer first reuses any installed bundle matching the running
 SteamOS target. If none matches, it automatically runs the equivalent of:

@@ -26,7 +26,7 @@ die() {
 source /etc/os-release
 [[ ${ID:-} == steamos ]] || die "this script may only run on SteamOS"
 [[ -f "$CONFIG_FILE" ]] || \
-    die "copy build/deck-config.example.env to .deck-config.env and edit it"
+    die "run build/configure-deck-artifacts.sh or copy build/deck-config.example.env to .deck-config.env"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 

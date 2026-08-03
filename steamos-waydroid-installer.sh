@@ -4,51 +4,28 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$SCRIPT_DIR" || exit 1
 
 REPAIR_MODE=false
-REPAIR_SHORTCUTS=false
 CONFIGURE_ARTIFACTS=false
 UNINSTALL_MODE=false
 FULL_UNINSTALL_MODE=false
-PRIMARY_MODE_COUNT=0
 usage () {
-	echo "usage: $0 [--repair [--repair-shortcuts] | --configure-artifacts | --uninstall | --uninstall-all]" >&2
+	echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all]" >&2
 }
-if [ "$#" -gt 2 ]
+if [ "$#" -gt 1 ]
 then
 	usage
 	exit 1
 fi
-for argument in "$@"
-do
-	case "$argument" in
-		--repair)
-			REPAIR_MODE=true
-			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
-			;;
-		--repair-shortcuts) REPAIR_SHORTCUTS=true ;;
-		--configure-artifacts)
-			CONFIGURE_ARTIFACTS=true
-			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
-			;;
-		--uninstall)
-			UNINSTALL_MODE=true
-			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
-			;;
-		--uninstall-all)
-			FULL_UNINSTALL_MODE=true
-			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
-			;;
-		*)
-			usage
-			exit 1
-			;;
-	esac
-done
-if [ "$PRIMARY_MODE_COUNT" -gt 1 ] || \
-	{ [ "$REPAIR_SHORTCUTS" = true ] && [ "$REPAIR_MODE" != true ]; }
-then
-	usage
-	exit 1
-fi
+case "${1:-}" in
+	"") ;;
+	--repair) REPAIR_MODE=true ;;
+	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
+	--uninstall) UNINSTALL_MODE=true ;;
+	--uninstall-all) FULL_UNINSTALL_MODE=true ;;
+	*)
+		usage
+		exit 1
+		;;
+esac
 
 clear
 
@@ -215,12 +192,11 @@ prompt_return_to_gaming_mode () {
 	fi
 }
 
-# Return success when a new shortcut should be created. When matching entries
-# exist, the user can add another, replace all matches, or leave them alone.
+# Return success only when no matching shortcut exists. Existing entries are
+# deliberately left to Steam and are never modified or deleted here.
 shortcut_should_be_created () {
 	shortcut_target=$1
 	shortcut_label=$2
-	SHORTCUT_KEEP_DUPLICATES=false
 	SHORTCUT_MATCH_COUNT=$(python3 "$WORKING_DIR/extras/icon.py" count "$shortcut_target")
 	shortcut_status=$?
 	if [ "$shortcut_status" -ne 0 ] || ! [[ "$SHORTCUT_MATCH_COUNT" =~ ^[0-9]+$ ]]
@@ -233,66 +209,8 @@ shortcut_should_be_created () {
 		return 0
 	fi
 
-	echo
-	echo "Matching $shortcut_label Steam shortcut(s):"
-	python3 "$WORKING_DIR/extras/icon.py" describe "$shortcut_target"
-	shortcut_choice=$(zenity --list --radiolist \
-		--title="SteamOS Waydroid Installer" \
-		--text="Choose what to do with the matching $shortcut_label shortcut(s). Details are shown in Konsole." \
-		--column="Select" \
-		--column="Action" \
-		--column="Description" \
-		FALSE "Add new shortcut" "Keep all existing shortcuts and add another" \
-		TRUE "Delete/Replace" "Restart Steam, remove all matches, and create one new shortcut" \
-		FALSE "Do nothing" "Leave shortcuts and artwork unchanged" \
-		--width=760 --height=300) || shortcut_choice="Do nothing"
-
-	case "$shortcut_choice" in
-		"Add new shortcut")
-			echo "Existing $shortcut_label shortcut(s) will be kept and another will be added."
-			SHORTCUT_KEEP_DUPLICATES=true
-			return 0
-			;;
-		"Delete/Replace")
-			if ! stop_steam_for_shortcut_edit
-			then
-				echo "Warning: Steam did not stop; $shortcut_label was left unchanged." >&2
-				return 1
-			fi
-			if ! python3 "$WORKING_DIR/extras/icon.py" remove "$shortcut_target"
-			then
-				echo "Warning: $shortcut_label could not be removed; it will not be recreated." >&2
-				return 1
-			fi
-			SHORTCUT_MATCH_COUNT=0
-			return 0
-			;;
-		"Do nothing"|"")
-			echo "$shortcut_label shortcut and artwork were left unchanged."
-			return 1
-			;;
-		*)
-			echo "Warning: unknown shortcut action; $shortcut_label was left unchanged." >&2
-			return 1
-			;;
-	esac
-}
-
-stop_steam_for_shortcut_edit () {
-	if ! pgrep -x steam > /dev/null
-	then
-		return 0
-	fi
-
-	echo "Stopping Steam so removed shortcuts cannot be restored from its in-memory library..."
-	steam -shutdown > /dev/null 2>&1 || true
-	steam_stop_attempt=0
-	while pgrep -x steam > /dev/null && [ "$steam_stop_attempt" -lt 45 ]
-	do
-		sleep 1
-		steam_stop_attempt=$((steam_stop_attempt + 1))
-	done
-	! pgrep -x steam > /dev/null
+	echo "$SHORTCUT_MATCH_COUNT matching $shortcut_label shortcut(s) already exist; leaving them unchanged."
+	return 1
 }
 
 wait_for_new_shortcut () {
@@ -313,7 +231,7 @@ wait_for_new_shortcut () {
 	return 1
 }
 
-repair_game_mode_shortcuts () {
+ensure_game_mode_shortcuts () {
 	echo "Checking Game Mode shortcuts..."
 	logged_in_user=$(whoami)
 	logged_in_home=$(eval echo "~$logged_in_user")
@@ -353,10 +271,7 @@ EOF
 					reconcile waydroid
 					--artwork-dir "$WORKING_DIR/extras/icons/waydroid"
 					)
-					if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
-					then
-						shortcut_reconcile_args+=(--keep-duplicates)
-					fi
+					shortcut_reconcile_args+=(--keep-duplicates)
 					python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
 						echo "Warning: Waydroid artwork could not be installed." >&2
 				else
@@ -379,10 +294,7 @@ EOF
 				reconcile nested-desktop
 				--artwork-dir "$WORKING_DIR/extras/icons/nested-desktop"
 				)
-				if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
-				then
-					shortcut_reconcile_args+=(--keep-duplicates)
-				fi
+				shortcut_reconcile_args+=(--keep-duplicates)
 				python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
 					echo "Warning: Nested Desktop artwork could not be installed." >&2
 			else
@@ -641,10 +553,7 @@ then
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable
 	trap - EXIT HUP INT TERM
 	echo Waydroid host integration has been repaired. Android data was not reinitialized or modified.
-	if [ "$REPAIR_SHORTCUTS" = true ]
-	then
-		repair_game_mode_shortcuts
-	fi
+	ensure_game_mode_shortcuts
 	prompt_return_to_gaming_mode
 	exit 0
 fi
@@ -750,7 +659,7 @@ else
 	mv extras/waydroid.img ~/Android_Waydroid/waydroid.img
 fi
 
-repair_game_mode_shortcuts
+ensure_game_mode_shortcuts
 
 # all done! Display dialog box for Gaming Mode
 prompt_return_to_gaming_mode

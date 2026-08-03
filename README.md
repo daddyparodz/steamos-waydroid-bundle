@@ -282,12 +282,10 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 4. Script will automatically install Waydroid together with the custom config. Install will roughly take around 5mins depending on the internet connection speed.
 5. Once done exit the script and go back to Game Mode.
 
-If a matching Waydroid or Nested Desktop Steam shortcut already exists, the
-installer shows the matches in Konsole and offers three choices: add another
-shortcut, delete all matches and replace them with one clean shortcut using the
-bundled artwork, or do nothing. Delete/Replace is the default. That option
-gracefully restarts Steam before removal so its in-memory shortcut list cannot
-restore the deleted entries.
+On every normal or repair run, the installer creates a Waydroid or Nested
+Desktop Steam shortcut only when no matching shortcut exists. Existing
+shortcuts and their artwork are never changed or deleted. To replace one,
+delete it through Steam before running the installer again.
 
 Advanced users can change the artifact source, but should do so only when they
 fully trust it: bundle packages are installed into SteamOS as root.
@@ -360,12 +358,6 @@ cd ~/steamos-waydroid-personal
 ```
 Repair requires a published bundle containing target-built host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
 
-To repair the SteamOS host integration and then inspect, replace, or recreate
-the Game Mode shortcuts as part of the same run, use:
-
-```sh
-./steamos-waydroid-installer.sh --repair --repair-shortcuts
-```
 
 # Mini-guides for Steam Deck Android Waydroid
 These mini guides are tailor-fitted for the Steam Deck that uses the script provided in this repo.

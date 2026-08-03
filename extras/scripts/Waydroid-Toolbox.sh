@@ -182,7 +182,7 @@ then
 		sleep 5
 	fi
 	python3 "$SHORTCUT_MANAGER" reconcile waydroid \
-		--artwork "$HOME/Android_Waydroid/steam-artwork.jpg"
+		--artwork-dir "$HOME/Android_Waydroid/icons/waydroid"
 	zenity --warning --title "Waydroid Toolbox" --text "One Android Waydroid launcher and its local artwork are ready in Game Mode!" --width 500 --height 75
 
 elif [ "$Choice" == "UNINSTALL" ]

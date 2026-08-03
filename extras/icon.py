@@ -23,6 +23,15 @@ TARGETS = {
     },
 }
 
+ARTWORK_SUFFIXES = {
+    "grid": "",
+    "poster": "p",
+    "hero": "_hero",
+    "logo": "_logo",
+    "icon": "_icon",
+}
+ARTWORK_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
 
 def read_cstring(fp):
     chars = []
@@ -189,27 +198,56 @@ def shortcut_app_id(shortcut):
     return (zlib.crc32((executable + app_name).encode("utf-8")) | 0x80000000) & 0xFFFFFFFF
 
 
-def install_artwork(path, shortcut, artwork, icon):
+def find_artwork_assets(artwork_dir=None, artwork=None, icon=None):
+    assets = {}
+    if artwork_dir is not None:
+        if not artwork_dir.is_dir():
+            raise ValueError(f"artwork directory does not exist: {artwork_dir}")
+        for artwork_type in ARTWORK_SUFFIXES:
+            matches = [artwork_dir / f"{artwork_type}{extension}"
+                       for extension in ARTWORK_EXTENSIONS
+                       if (artwork_dir / f"{artwork_type}{extension}").is_file()]
+            if len(matches) > 1:
+                raise ValueError(
+                    f"multiple {artwork_type} artwork files found in {artwork_dir}")
+            if matches:
+                assets[artwork_type] = matches[0]
+
+    # Retain compatibility with the previous single-image command line.
+    if artwork is not None and artwork.is_file():
+        for artwork_type in ("grid", "poster", "hero"):
+            assets.setdefault(artwork_type, artwork)
+    if icon is not None and icon.is_file():
+        assets.setdefault("icon", icon)
+        assets.setdefault("logo", icon)
+    return assets
+
+
+def install_artwork(path, shortcut, assets):
     app_id = shortcut_app_id(shortcut)
     grid = path.parent / "grid"
     grid.mkdir(parents=True, exist_ok=True)
 
-    # Steam's non-Steam artwork names: landscape, portrait and hero.
-    for suffix in ("", "p", "_hero"):
-        destination = grid / f"{app_id}{suffix}{artwork.suffix.lower()}"
-        shutil.copy2(artwork, destination)
-    if icon and icon.is_file():
-        shutil.copy2(icon, grid / f"{app_id}_icon{icon.suffix.lower()}")
-        shutil.copy2(icon, grid / f"{app_id}_logo{icon.suffix.lower()}")
-    print(f"Installed local Steam artwork for app {app_id} in {grid}")
+    # Remove every supported old extension first, so a JPG-to-PNG change does
+    # not leave Steam free to select a stale file.
+    removed = remove_artwork(path, shortcut)
+    installed = {}
+    for artwork_type, source in assets.items():
+        suffix = ARTWORK_SUFFIXES[artwork_type]
+        destination = grid / f"{app_id}{suffix}{source.suffix.lower()}"
+        shutil.copy2(source, destination)
+        installed[artwork_type] = destination
+    print(f"Installed {len(installed)} local Steam artwork file(s) for app "
+          f"{app_id} in {grid}; replaced {removed} old file(s).")
+    return installed
 
 
 def remove_artwork(path, shortcut):
     app_id = shortcut_app_id(shortcut)
     grid = path.parent / "grid"
     removed = 0
-    for suffix in ("", "p", "_hero", "_logo", "_icon"):
-        for extension in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+    for suffix in ARTWORK_SUFFIXES.values():
+        for extension in ARTWORK_EXTENSIONS:
             artwork = grid / f"{app_id}{suffix}{extension}"
             if artwork.is_file():
                 artwork.unlink()
@@ -217,7 +255,7 @@ def remove_artwork(path, shortcut):
     return removed
 
 
-def reconcile(home, path, target, artwork=None, icon=None):
+def reconcile(home, path, target, artwork_dir=None, artwork=None, icon=None):
     if path is None or not path.is_file():
         print("No shortcuts.vdf found; add the shortcut first.", file=sys.stderr)
         return 1
@@ -232,17 +270,29 @@ def reconcile(home, path, target, artwork=None, icon=None):
     primary = matches[0]
     definition = TARGETS[target]
     primary["AppName"] = definition["name"]
-    if target == "waydroid" and icon and icon.is_file():
-        primary["icon"] = str(icon)
+
+    try:
+        assets = find_artwork_assets(artwork_dir, artwork, icon)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 1
+    if artwork_dir is not None and not assets:
+        print(f"No supported artwork files found in {artwork_dir}.", file=sys.stderr)
+        return 1
 
     duplicate_ids = {id(shortcut) for shortcut in matches[1:]}
     retained = [shortcut for shortcut in shortcuts if id(shortcut) not in duplicate_ids]
+    for duplicate in matches[1:]:
+        remove_artwork(path, duplicate)
+
+    if assets:
+        installed = install_artwork(path, primary, assets)
+        if "icon" in installed:
+            primary["icon"] = str(installed["icon"])
     write_shortcuts(path, data, retained)
 
     removed = len(matches) - 1
     print(f"Kept one {target} Steam shortcut; removed {removed} duplicate(s).")
-    if target == "waydroid" and artwork and artwork.is_file():
-        install_artwork(path, primary, artwork, icon)
     return 0
 
 
@@ -270,9 +320,9 @@ def main():
     parser.add_argument("action", choices=("has", "reconcile", "remove"), nargs="?",
                         default="reconcile")
     parser.add_argument("target", choices=tuple(TARGETS), nargs="?", default="waydroid")
+    parser.add_argument("--artwork-dir", type=Path)
     parser.add_argument("--artwork", type=Path)
-    parser.add_argument("--icon", type=Path,
-                        default=Path("/usr/share/icons/hicolor/512x512/apps/waydroid.png"))
+    parser.add_argument("--icon", type=Path)
     parser.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     args = parser.parse_args()
 
@@ -281,7 +331,8 @@ def main():
         return 0 if matching_shortcuts(path, args.target) else 1
     if args.action == "remove":
         return remove_target(path, args.target)
-    return reconcile(args.home, path, args.target, args.artwork, args.icon)
+    return reconcile(args.home, path, args.target, args.artwork_dir,
+                     args.artwork, args.icon)
 
 
 if __name__ == "__main__":

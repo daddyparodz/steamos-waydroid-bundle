@@ -3,3 +3,12 @@
 fingerprint.txt
 SteamOS-Waydroid-Proposed-Architecture.md
 logfile
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/

@@ -310,7 +310,8 @@ then
 		extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
 	cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
 	cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
-	cp android.jpg ~/Android_Waydroid/steam-artwork.jpg
+	mkdir -p ~/Android_Waydroid/icons
+	cp -a extras/icons/. ~/Android_Waydroid/icons/
 
 	# waydroid launcher, toolbox and updater
 	chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
@@ -534,7 +535,6 @@ else
 	logged_in_user=$(whoami)
 	logged_in_home=$(eval echo "~$logged_in_user")
 	launcher_script="${logged_in_home}/Android_Waydroid/Android_Waydroid_Cage.sh"
-	icon_path="/usr/share/icons/hicolor/512x512/apps/waydroid.png"
 
 	if [ -f "$launcher_script" ]; then
 		chmod +x "$launcher_script"
@@ -563,7 +563,7 @@ EOF
 	fi
 	rm -f "$TMP_DESKTOP"
 	python3 "$WORKING_DIR/extras/icon.py" reconcile waydroid \
-		--artwork "$WORKING_DIR/android.jpg" --icon "$icon_path"
+		--artwork-dir "$WORKING_DIR/extras/icons/waydroid"
 	echo Waydroid shortcut and local artwork are ready in Game Mode.
 
 	# add steamos-nested-desktop to Game Mode. This can be used when doing Waydroid maintenance.
@@ -574,7 +574,8 @@ EOF
 		steamos-add-to-steam /usr/bin/steamos-nested-desktop &> /dev/null
 		sleep 3
 	fi
-	python3 "$WORKING_DIR/extras/icon.py" reconcile nested-desktop
+	python3 "$WORKING_DIR/extras/icon.py" reconcile nested-desktop \
+		--artwork-dir "$WORKING_DIR/extras/icons/nested-desktop"
 	echo steamos-nested-desktop shortcut is ready in Game Mode.
 
 	# all done lets re-enable the readonly

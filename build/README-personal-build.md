@@ -192,18 +192,40 @@ match rather than simply using the newest artifact. `latest.manifest` remains
 as an informational pointer, and versioned manifests remain available for
 manual bundle management.
 
+### Upload to a private GitHub Release
+
+Set `GITHUB_REPOSITORY` and, if desired, `GITHUB_RELEASE_TAG` in
+`.build-config.env`. Authenticate GitHub CLI on Fedora and upload the locally
+published bundle after pushing its source revision to the private repository:
+
+```bash
+gh auth login
+build/upload-private-bundle-to-github.sh
+```
+
+The upload helper creates the long-lived Release when it does not exist. It
+refuses to overwrite the archive, checksum, or versioned manifest, then
+replaces `latest.manifest` and `targets.manifest` with the newly generated
+catalogs. Release immutability must remain disabled because those two catalog
+assets are intentionally mutable. Older versioned bundle assets remain in the
+same private Release for SteamOS rollback.
+
 ## 6. Clone the source on the Deck
 
-Clone the Fedora Git checkout over SSH. Later, the same checkout can use a
-GitHub remote without changing the Deck-side build artifact workflow:
+Clone the private GitHub repository over SSH after adding the Deck's public SSH
+key to the GitHub account that owns or can read the repository:
 
 ```bash
 git clone \
     --branch personal-safe-architecture \
     --single-branch \
-    fedora-build:/home/paulwork/WORK/UniStore/Codes/SteamOS-Waydroid-Installer \
+    git@github.com:YOUR_USERNAME/steamos-waydroid-personal.git \
     ~/steamos-waydroid-personal-installer
 ```
+
+An existing checkout cloned from Fedora does not need to be recreated. Rename
+its old `origin`, add the private GitHub repository as `origin`, fetch it, and
+set the local branch's upstream to `origin/personal-safe-architecture`.
 
 ## 7. Configure Deck artifact access
 
@@ -214,16 +236,30 @@ cd ~/steamos-waydroid-personal-installer
 cp build/deck-config.example.env .deck-config.env
 ```
 
-The default `ARTIFACT_SOURCE` uses the `fedora-build` SSH alias and the default
-Fedora publish directory. Adjust it if either differs. The main installer will
-first reuse any installed bundle matching the running SteamOS target; if none
-matches, it automatically runs the equivalent of:
+The example defaults to an authenticated private GitHub Release. Install GitHub
+CLI in the `deck` user's PATH, run `gh auth login` on the Deck, and set:
+
+```bash
+ARTIFACT_SOURCE="github-release"
+GITHUB_REPOSITORY="YOUR_USERNAME/steamos-waydroid-personal"
+GITHUB_RELEASE_TAG="private-bundles"
+BUNDLE_VERSION="auto"
+```
+
+Git repository SSH authentication and private Release authentication are
+separate: an SSH key permits `git pull`, while the Deck's GitHub CLI login
+permits Release asset downloads. As a fallback, `ARTIFACT_SOURCE` may instead
+use the `fedora-build` SSH alias and Fedora publish directory shown in the
+example configuration.
+
+The main installer first reuses any installed bundle matching the running
+SteamOS target. If none matches, it automatically runs the equivalent of:
 
 ```bash
 build/install-private-bundle-on-deck.sh
 ```
 
-The Deck pulls only the matching archive, checks its SHA-256 file, rejects
+The Deck downloads only the matching archive, checks its SHA-256 file, rejects
 unsafe archive paths, extracts through a staging directory, runs the ELF
 verifier against the real SteamOS host, compares the embedded release and ABI
 fingerprint, and switches `current` only after every check passes. Version
@@ -234,8 +270,8 @@ deliberate compatibility experiment only, use:
 build/install-private-bundle-on-deck.sh --allow-target-mismatch
 ```
 
-The ELF verifier still runs in override mode. `ARTIFACT_SOURCE` may later be an
-HTTPS GitHub Release directory.
+The ELF verifier still runs in override mode. An unauthenticated public HTTP(S)
+artifact directory is also supported.
 
 ## 8. Run the installer locally
 

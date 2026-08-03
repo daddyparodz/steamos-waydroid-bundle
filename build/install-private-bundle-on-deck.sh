@@ -35,8 +35,27 @@ source "$SCRIPT_DIR/lib/target-fingerprint.sh"
 
 ARTIFACT_SOURCE="${ARTIFACT_SOURCE:-}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
+GITHUB_RELEASE_TAG="${GITHUB_RELEASE_TAG:-private-bundles}"
 [[ -n "$ARTIFACT_SOURCE" ]] || die "ARTIFACT_SOURCE is not configured"
 [[ -n "$BUNDLE_VERSION" ]] || die "BUNDLE_VERSION is not configured"
+
+GITHUB_CLI=""
+if [[ "$ARTIFACT_SOURCE" == github-release ]]; then
+    if command -v gh > /dev/null 2>&1; then
+        GITHUB_CLI="$(command -v gh)"
+    elif [[ -x "$HOME/.local/bin/gh" ]]; then
+        GITHUB_CLI="$HOME/.local/bin/gh"
+    else
+        die "gh is required for a private GitHub Release artifact source"
+    fi
+    [[ "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || \
+        die "GITHUB_REPOSITORY must use the OWNER/REPOSITORY form"
+    [[ "$GITHUB_RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || \
+        die "GITHUB_RELEASE_TAG contains unsafe characters"
+    "$GITHUB_CLI" auth status --hostname github.com > /dev/null 2>&1 || \
+        die "GitHub CLI is not authenticated; run gh auth login on the Deck"
+fi
 
 for command_name in sha256sum tar; do
     command -v "$command_name" > /dev/null || die "required command not found: $command_name"
@@ -55,6 +74,12 @@ trap cleanup EXIT
 fetch_file() {
     local filename="$1"
     case "$ARTIFACT_SOURCE" in
+        github-release)
+            "$GITHUB_CLI" release download "$GITHUB_RELEASE_TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --pattern "$filename" \
+                --output "$DOWNLOAD_ROOT/$filename"
+            ;;
         https://*|http://*)
             command -v curl > /dev/null || die "curl is required for an HTTP artifact source"
             curl --fail --location \
@@ -66,7 +91,7 @@ fetch_file() {
             rsync -a -- "$ARTIFACT_SOURCE/$filename" "$DOWNLOAD_ROOT/$filename"
             ;;
         *)
-            die "ARTIFACT_SOURCE must be an SSH rsync source or an http(s) URL"
+            die "ARTIFACT_SOURCE must be github-release, an SSH rsync source, or an http(s) URL"
             ;;
     esac
 }

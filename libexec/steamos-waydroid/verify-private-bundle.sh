@@ -4,8 +4,20 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$SCRIPT_DIR/lib/common.sh"
+
+die() {
+    printf 'error: %s\n' "$*" >&2
+    exit 1
+}
+
+require_command() {
+    local command_name="$1"
+    command -v "$command_name" > /dev/null 2>&1 || \
+        die "required command not found: $command_name"
+}
+
+[[ ${STEAMOS_WAYDROID_INTERNAL:-} == 1 ]] || \
+    die "this is an internal helper; run ./steamos-waydroid-installer.sh"
 
 for command_name in bsdtar find grep readelf ldd file python3 realpath; do
     require_command "$command_name"

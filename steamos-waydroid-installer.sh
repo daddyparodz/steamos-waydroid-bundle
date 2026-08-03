@@ -1,27 +1,34 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$SCRIPT_DIR" || exit 1
+
 REPAIR_MODE=false
 CONFIGURE_ARTIFACTS=false
+UNINSTALL_MODE=false
+FULL_UNINSTALL_MODE=false
 if [ "$#" -gt 1 ]
 then
-	echo "usage: $0 [--repair | --configure-artifacts]" >&2
+	echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all]" >&2
 	exit 1
 fi
 case "${1:-}" in
 	"") ;;
 	--repair) REPAIR_MODE=true ;;
 	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
+	--uninstall) UNINSTALL_MODE=true ;;
+	--uninstall-all) FULL_UNINSTALL_MODE=true ;;
 	*)
-		echo "usage: $0 [--repair | --configure-artifacts]" >&2
+		echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all]" >&2
 		exit 1
 		;;
 esac
 
 clear
 
-echo SteamOS Waydroid Installer Script by ryanrudolf
-echo https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer
-echo YT - 10MinuteSteamDeckGamer
+echo SteamOS Waydroid Installer - target-built public bundle edition
+echo https://github.com/pjohno/steamos-waydroid-personal
+echo Based on the installer by ryanrudolf / 10MinuteSteamDeckGamer
 sleep 2
 
 # define variables here
@@ -37,12 +44,22 @@ fi
 STEAMOS_VERSION=$(cat /etc/os-release | grep -i version_id | cut -d "=" -f2 | cut -d "." -f1-2)
 BASE_VERSION=3.8
 STEAMOS_BRANCH=$(steamos-select-branch -c)
-WORKING_DIR=$(pwd)
+WORKING_DIR=$SCRIPT_DIR
 DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
-ARTIFACT_CONFIGURATOR=$WORKING_DIR/build/configure-deck-artifacts.sh
-if [ "$CONFIGURE_ARTIFACTS" = true ]
+DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
+ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
+if [ "$FULL_UNINSTALL_MODE" = true ]
 then
-	if ! "$ARTIFACT_CONFIGURATOR" --force
+	STEAMOS_WAYDROID_INTERNAL=1 \
+		"$WORKING_DIR/reset-personal-install.sh" --full-process
+	exit $?
+elif [ "$UNINSTALL_MODE" = true ]
+then
+	STEAMOS_WAYDROID_INTERNAL=1 "$WORKING_DIR/reset-personal-install.sh"
+	exit $?
+elif [ "$CONFIGURE_ARTIFACTS" = true ]
+then
+	if ! STEAMOS_WAYDROID_INTERNAL=1 "$ARTIFACT_CONFIGURATOR" --force
 	then
 		echo Artifact configuration was not completed. >&2
 		exit 1
@@ -50,8 +67,8 @@ then
 	exit 0
 elif [ ! -f "$DECK_CONFIG_FILE" ]
 then
-	echo No Deck artifact configuration was found. Starting first-run setup.
-	if ! "$ARTIFACT_CONFIGURATOR"
+	echo No Deck artifact configuration was found. Using the official public bundle source.
+	if ! STEAMOS_WAYDROID_INTERNAL=1 "$ARTIFACT_CONFIGURATOR" --defaults
 	then
 		echo Artifact configuration was not completed. >&2
 		exit 1
@@ -102,9 +119,9 @@ fi
 
 # Select an already-installed exact target bundle, or fetch the matching
 # published artifact, before this installer performs privileged integration.
-if ! "$WORKING_DIR/build/ensure-private-bundle-on-deck.sh"
+if ! STEAMOS_WAYDROID_INTERNAL=1 "$DECK_RUNTIME/ensure-private-bundle-on-deck.sh"
 then
-	echo Unable to install or activate a private Cage bundle for this SteamOS target.
+	echo Unable to install or activate a target-built bundle for this SteamOS target.
 	echo Check .deck-config.env and its artifact source, then run the installer again.
 	exit 1
 fi
@@ -112,7 +129,7 @@ fi
 python_package=("$HOST_PACKAGE_ROOT"/python-gbinder*.zst)
 if [ "${#python_package[@]}" -ne 1 ] || [ ! -f "${python_package[0]}" ]
 then
-	echo The private bundle must contain exactly one python-gbinder package. >&2
+	echo The target-built bundle must contain exactly one python-gbinder package. >&2
 	exit 1
 fi
 packaged_python_version=$(bsdtar -tf "${python_package[0]}" | \
@@ -121,7 +138,7 @@ host_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{
 if [ -z "$packaged_python_version" ] || [ "$packaged_python_version" != "$host_python_version" ]
 then
 	echo "Private python-gbinder targets Python ${packaged_python_version:-unknown}, but SteamOS provides Python $host_python_version." >&2
-	echo Build and publish a compatible private bundle before continuing. >&2
+	echo Build and publish a compatible bundle before continuing. >&2
 	exit 1
 fi
 
@@ -131,9 +148,9 @@ if [ ! -x "$PRIVATE_CAGE" ] || [ ! -x "$PRIVATE_WLR_RANDR" ] || \
 	[ ! -x "$PRIVATE_COMPATIBILITY_REPORT" ] || \
 	[ ! -f "$PRIVATE_BUNDLE/.verified" ]
 then
-	echo Private Cage bundle is missing or unverified.
+	echo Target-built bundle is missing or unverified.
 	echo Expected bundle: $PRIVATE_BUNDLE
-	echo Run build/ensure-private-bundle-on-deck.sh and inspect its error.
+	echo Run the installer again and inspect the bundle-selection error.
 	exit 1
 fi
 target_check_args=("$PRIVATE_BUNDLE")
@@ -147,7 +164,7 @@ if ! "$PRIVATE_TARGET_CHECK" "${target_check_args[@]}"
 then
 	report_file="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid/reports/$(date -u +%Y%m%dT%H%M%SZ)-compatibility.md"
 	"$PRIVATE_COMPATIBILITY_REPORT" "$PRIVATE_BUNDLE" "$report_file" || true
-	echo Private Cage bundle was built for a different SteamOS target.
+	echo The active bundle was built for a different SteamOS target.
 	echo Compatibility report: "$report_file"
 	echo Build, publish, and install a bundle for the current SteamOS build first.
 	exit 1

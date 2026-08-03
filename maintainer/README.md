@@ -1,4 +1,4 @@
-# Personal target-built Waydroid bundle
+# Maintainer guide: target-built Waydroid bundles
 
 This directory builds Cage, wlroots, wlr-randr, libglibutil, libgbinder,
 python-gbinder, and Waydroid against a copy of the target Steam Deck's SteamOS
@@ -20,7 +20,7 @@ The current validated host baseline is SteamOS 3.8.16 Stable on x86-64 with:
 From the repository root on Fedora:
 
 ```bash
-cp build/config.example.env .build-config.env
+cp maintainer/config.example.env .build-config.env
 ```
 
 Edit `DECK_HOST` in `.build-config.env`. Keep `BUNDLE_VERSION="auto"` so the
@@ -33,7 +33,7 @@ build. The local configuration file is ignored by Git.
 Enable SSH on the Deck and then run on Fedora:
 
 ```bash
-build/sync-steamos-rootfs.sh
+maintainer/sync-steamos-rootfs.sh
 ```
 
 The Deck is only read over SSH. A root-owned build root is materialised on the
@@ -72,21 +72,21 @@ needed inside the build root; it does not attempt to copy Deck secrets.
 ## 3. Enter and prepare the copied rootfs
 
 ```bash
-build/enter-build-rootfs.sh
+maintainer/enter-build-rootfs.sh
 ```
 
 Inside the copied SteamOS rootfs, run the preparation script. Do not run
 `pacman -Syu`:
 
 ```bash
-/repo/build/prepare-build-rootfs.sh
+/repo/maintainer/prepare-build-rootfs.sh
 ```
 
 For an automated preparation followed immediately by the build, Fedora may
 instead invoke the rootfs with:
 
 ```bash
-build/enter-build-rootfs.sh /usr/bin/bash /repo/build/run-private-build-in-rootfs.sh
+maintainer/enter-build-rootfs.sh /usr/bin/bash /repo/maintainer/run-private-build-in-rootfs.sh
 ```
 
 The script initialises the copied rootfs CA trust and package keyring, installs
@@ -131,7 +131,7 @@ pkg-config --modversion \
 Still inside the rootfs:
 
 ```bash
-/repo/build/build-private-bundle.sh
+/repo/maintainer/build-private-bundle.sh
 ```
 
 The build first creates the four pacman packages in dependency order:
@@ -140,7 +140,7 @@ The build first creates the four pacman packages in dependency order:
 libglibutil -> libgbinder -> python-gbinder -> waydroid
 ```
 
-Each upstream release archive is checked against `build/packages/sources.lock`.
+Each upstream release archive is checked against `maintainer/packages/sources.lock`.
 The two C libraries are installed only into the disposable copied rootfs so the
 next package can compile; the live Deck is not touched. The build verifies the
 pkg-config metadata and imports the compiled `gbinder` module using the copied
@@ -172,12 +172,12 @@ packages and source lock, and a checker used again on the real Deck. A
 different SteamOS `BUILD_ID`, GLib, or Python creates a separate target instead
 of replacing an earlier working build.
 
-## 5. Publish the private artifact on Fedora
+## 5. Publish the artifact on Fedora
 
 Package the verified directory as an immutable archive plus a SHA-256 file:
 
 ```bash
-build/publish-private-bundle.sh
+maintainer/publish-private-bundle.sh
 ```
 
 Publishing requires a clean Git worktree so the manifest's source revision
@@ -192,15 +192,15 @@ match rather than simply using the newest artifact. `latest.manifest` remains
 as an informational pointer, and versioned manifests remain available for
 manual bundle management.
 
-### Upload to a private GitHub Release
+### Upload to the public GitHub Release
 
 Set `GITHUB_REPOSITORY` and, if desired, `GITHUB_RELEASE_TAG` in
 `.build-config.env`. Authenticate GitHub CLI on Fedora and upload the locally
-published bundle after pushing its source revision to the private repository:
+published bundle after pushing its source revision to the public repository:
 
 ```bash
 gh auth login
-build/upload-private-bundle-to-github.sh
+maintainer/upload-private-bundle-to-github.sh
 ```
 
 The upload helper creates the long-lived Release when it does not exist. It
@@ -208,47 +208,43 @@ refuses to overwrite the archive, checksum, or versioned manifest, then
 replaces `latest.manifest` and `targets.manifest` with the newly generated
 catalogs. Release immutability must remain disabled because those two catalog
 assets are intentionally mutable. Older versioned bundle assets remain in the
-same private Release for SteamOS rollback.
+same Release for SteamOS rollback.
 
 ## 6. Clone the source on the Deck
 
-Clone the private GitHub repository over SSH after adding the Deck's public SSH
-key to the GitHub account that owns or can read the repository:
+Clone the public GitHub repository:
 
 ```bash
 git clone \
-    --branch personal-safe-architecture \
-    --single-branch \
-    git@github.com:YOUR_USERNAME/steamos-waydroid-personal.git \
-    ~/steamos-waydroid-personal-installer
+    https://github.com/pjohno/steamos-waydroid-personal.git \
+    ~/steamos-waydroid-personal
 ```
 
-An existing checkout cloned from Fedora does not need to be recreated. Rename
-its old `origin`, add the private GitHub repository as `origin`, fetch it, and
-set the local branch's upstream to `origin/personal-safe-architecture`.
+An existing checkout cloned from Fedora does not need to be recreated; its
+`origin` can be changed to the public GitHub URL.
 
 ## 7. Configure Deck artifact access
 
-On the first normal or repair run, the installer starts an interactive setup
-when `.deck-config.env` is absent. It offers public GitHub, authenticated
-private GitHub, SSH/rsync, and public HTTP(S) sources, with
-`BUNDLE_VERSION="auto"` as the recommended default. To configure the source
-without starting installation, or to replace an existing configuration, run:
+On the first normal or repair run, the installer automatically creates
+`.deck-config.env` with the official public Release and
+`BUNDLE_VERSION="auto"`. No artifact-source knowledge or GitHub authentication
+is required for normal installation. To deliberately replace that source, run:
 
 ```bash
-cd ~/steamos-waydroid-personal-installer
+cd ~/steamos-waydroid-personal
 ./steamos-waydroid-installer.sh --configure-artifacts
 ```
 
-The wizard detects an `OWNER/REPOSITORY` default from a GitHub `origin` remote
-when possible. It writes the machine-local configuration atomically with mode
-`0600` and never replaces it during an ordinary installer run. The tracked
-`build/deck-config.example.env` remains available for non-interactive manual
-setup.
+Advanced setup warns that bundle packages are installed as root and requires a
+typed acknowledgement for a non-official source. It writes the machine-local
+configuration atomically with mode `0600` and never replaces it during an
+ordinary installer run. The tracked
+`libexec/steamos-waydroid/deck-config.example.env` remains available for
+non-interactive manual setup.
 
 For an authenticated private GitHub Release, install GitHub CLI in the `deck`
 user's PATH and run `gh auth login` on the Deck before selecting that option.
-The resulting configuration is:
+Private GitHub is an advanced alternative. Its resulting configuration is:
 
 ```bash
 ARTIFACT_SOURCE="github-release"
@@ -264,35 +260,31 @@ use an SSH alias and Fedora publish directory. A public GitHub Release uses its
 ordinary HTTPS download URL and does not require `gh` authentication.
 
 The main installer first reuses any installed bundle matching the running
-SteamOS target. If none matches, it automatically runs the equivalent of:
+SteamOS target. If none matches, its internal runtime downloads and verifies
+the matching bundle automatically. Normal users should continue through:
 
 ```bash
-build/install-private-bundle-on-deck.sh
+./steamos-waydroid-installer.sh
 ```
 
 The Deck downloads only the matching archive, checks its SHA-256 file, rejects
 unsafe archive paths, extracts through a staging directory, runs the ELF
 verifier against the real SteamOS host, compares the embedded release and ABI
 fingerprint, and switches `current` only after every check passes. Version
-directories are immutable. A target mismatch is rejected by default. For a
-deliberate compatibility experiment only, use:
-
-```bash
-build/install-private-bundle-on-deck.sh --allow-target-mismatch
-```
-
-The ELF verifier still runs in override mode. An unauthenticated public HTTP(S)
-artifact directory is also supported.
+directories are immutable. A target mismatch is rejected by default, and there
+is deliberately no normal-user option to bypass that protection. An
+unauthenticated public HTTP(S) artifact directory is supported through advanced
+artifact configuration.
 
 ## 8. Run the installer locally
 
 The installer or repair mode must be started locally from Konsole in SteamOS
 Desktop Mode so graphical prompts and Steam shortcut creation use the real
-desktop session. It ensures a matching private bundle is active before
+desktop session. It ensures a matching target-built bundle is active before
 requesting privileged SteamOS changes:
 
 ```bash
-cd ~/steamos-waydroid-personal-installer
+cd ~/steamos-waydroid-personal
 ./steamos-waydroid-installer.sh
 ```
 
@@ -347,16 +339,16 @@ To delete the entire Fedora build workspace, including the copied SteamOS
 rootfs, sources, output and published artifacts:
 
 ```bash
-build/reset-fedora-build.sh --include-config
+maintainer/reset-fedora-build.sh --include-config
 ```
 
 This retains the Fedora Git checkout and SSH configuration. On the Deck, exit
-Steam completely and run:
+Steam completely and run the public entry point:
 
 ```bash
-./reset-personal-install.sh --full-process
+./steamos-waydroid-installer.sh --uninstall-all
 ```
 
 Full-process mode removes Waydroid, Android data, Steam shortcuts and artwork,
-the private bundle, and the Deck Git checkout. It retains SSH keys and SSH host
+the installed bundles, and the Deck Git checkout. It retains SSH keys and SSH host
 configuration so the repository can be cloned again.

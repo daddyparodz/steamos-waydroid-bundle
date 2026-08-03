@@ -10,6 +10,9 @@ die() {
     exit 1
 }
 
+[[ ${STEAMOS_WAYDROID_INTERNAL:-} == 1 ]] || \
+    die "this is an internal helper; run ./steamos-waydroid-installer.sh"
+
 [[ "$(id -un)" == deck ]] || die "run this script as the deck user"
 [[ -r /etc/os-release ]] || die "cannot read /etc/os-release"
 # shellcheck source=/dev/null
@@ -46,7 +49,7 @@ activate_bundle() {
 }
 
 if bundle_matches_current_target "$CURRENT_LINK"; then
-    printf 'Current private bundle already matches this SteamOS target: %s\n' \
+    printf 'Current bundle already matches this SteamOS target: %s\n' \
         "$(basename -- "$(readlink -f "$CURRENT_LINK")")"
     exit 0
 fi
@@ -66,4 +69,4 @@ if ! bundle_matches_current_target "$CURRENT_LINK"; then
     die "artifact installation did not activate a bundle matching this SteamOS target"
 fi
 
-printf 'A matching private bundle is installed and active.\n'
+printf 'A matching target-built bundle is installed and active.\n'

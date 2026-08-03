@@ -6,8 +6,8 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
-# shellcheck source=lib/target-fingerprint.sh
-source "$SCRIPT_DIR/lib/target-fingerprint.sh"
+# shellcheck source=../libexec/steamos-waydroid/lib/target-fingerprint.sh
+source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
 
 require_non_root
 for command_name in git sha256sum tar; do
@@ -108,7 +108,7 @@ mv -f \
     "$STAGING_ROOT/$TARGETS_MANIFEST_NAME" \
     "$PUBLISH_ROOT/"
 
-printf '\nPublished private bundle:\n'
+printf '\nPublished target-built bundle:\n'
 printf '  %s/%s\n' "$PUBLISH_ROOT" "$ARCHIVE_NAME"
 printf '  %s/%s\n' "$PUBLISH_ROOT" "$TARGETS_MANIFEST_NAME"
 printf 'The Deck can now pull and verify this artifact.\n'

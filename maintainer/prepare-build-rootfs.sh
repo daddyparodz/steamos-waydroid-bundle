@@ -6,11 +6,10 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
-# shellcheck source=lib/target-fingerprint.sh
-source "$SCRIPT_DIR/lib/target-fingerprint.sh"
+# shellcheck source=../libexec/steamos-waydroid/lib/target-fingerprint.sh
+source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
 
-require_steamos_root
-[[ $EUID -eq 0 ]] || die "run this script as root inside the copied SteamOS rootfs"
+require_copied_build_root
 
 for command_name in pacman pacman-key update-ca-trust; do
     require_command "$command_name"
@@ -127,4 +126,4 @@ prepared_target="$(fingerprint_value "$prepared_fingerprint" TARGET_ENVIRONMENT_
     die "build tools changed the target ABI; discard this rootfs and investigate the pacman transaction"
 
 printf '\nRootfs preparation passed. Build with:\n'
-printf '  /repo/build/build-private-bundle.sh\n'
+printf '  /repo/maintainer/build-private-bundle.sh\n'

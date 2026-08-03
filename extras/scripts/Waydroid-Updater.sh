@@ -1,9 +1,20 @@
 #!/bin/bash
-echo This will clone the latest version of the SteamOS Waydroid Installer script and perform an update.
-sleep 5
-cd ~/
-rm -rf ~/steamos-waydroid-installer
-git clone --depth=1 https://github.com/ryanrudolfoba/steamos-waydroid-installer
-cd ~/steamos-waydroid-installer
-chmod +x steamos-waydroid-installer.sh
-./steamos-waydroid-installer.sh
+
+set -e
+
+checkout="$HOME/steamos-waydroid-personal"
+repository="https://github.com/pjohno/steamos-waydroid-personal.git"
+
+echo "Updating the SteamOS Waydroid Installer from its public repository."
+sleep 2
+
+if [ -d "$checkout/.git" ]; then
+	git -C "$checkout" pull --ff-only
+elif [ -e "$checkout" ]; then
+	echo "Cannot clone: $checkout exists but is not a Git checkout." >&2
+	exit 1
+else
+	git clone --depth=1 "$repository" "$checkout"
+fi
+
+exec "$checkout/steamos-waydroid-installer.sh"

@@ -5,16 +5,17 @@ A collection of tools that is packaged into an easy to use script that is stream
 * Waydroid Toolbox to easily toggle some configuration settings for Waydroid.
 * [waydroid_script](https://github.com/casualsnek/waydroid_script) to easily add the libndk ARM translation layer and widevine.
 
-**NOTE - this repository uses `main` and `testing` branches.**
+This public edition installs only target-built bundles published for the exact
+SteamOS release and userspace ABI running on the Deck. It is based on
+[ryanrudolfoba's SteamOS Waydroid Installer](https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer).
 
-**`testing`** - this is where new updates / features are pushed and sits for 1-2 weeks to make sure that bugs are squashed and eliminated. You can access it via this command -
-```
-git clone --depth=1 -b testing https://github.com/ryanrudolfoba/steamos-waydroid-installer
-```
+Normal Deck users should run only `steamos-waydroid-installer.sh`. Internal
+runtime helpers live under `libexec/`; reproducible bundle-building tools live
+under `maintainer/` and are not Deck commands. See the
+[maintainer guide](maintainer/README.md) only when producing bundles.
 
-**`main`** this is updated after 1-2 weeks in `testing` branch. You can access it via this command -
-```
-git clone --depth=1 https://github.com/ryanrudolfoba/steamos-waydroid-installer
+```sh
+git clone --depth=1 https://github.com/pjohno/steamos-waydroid-personal.git
 ```
 
 **Script has gone through several updates - this now allows you to install Android 11 / Android 13 and their TV counterparts - Android 11 TV / Android 13 TV!**
@@ -262,26 +263,18 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 
 **How to Use and Install the Script**
 1. Go into Desktop Mode and open a `konsole` terminal.
-2. Clone the github repo.
-	To clone the `main` branch -
+2. Clone the GitHub repository:
    ```sh
    cd ~/
-   git clone --depth=1 https://github.com/ryanrudolfoba/steamos-waydroid-installer
+   git clone --depth=1 https://github.com/pjohno/steamos-waydroid-personal.git
    ```
 
-	To clone the `testing` branch where new features / updates are being tested before it goes to `main` -
-	```sh
-   cd ~/
-   git clone --depth=1 -b testing https://github.com/ryanrudolfoba/steamos-waydroid-installer
-   ```
-
-3. Execute the script. On its first run it will ask where compatible binary
-   bundles should be downloaded from and which bundle version to use. Press
-   Enter to accept the detected/recommended defaults. The selection is saved
-   locally in `.deck-config.env` and is not committed to Git. \
+3. Execute the script. On first run it creates the ignored local
+   `.deck-config.env` with mode `0600`, selects the official public Release,
+   and uses the bundle matching the Deck's exact SteamOS target. \
 
    ```sh
-   cd ~/steamos-waydroid-installer
+   cd ~/steamos-waydroid-personal
    chmod +x steamos-waydroid-installer.sh
    ./steamos-waydroid-installer.sh
    ```
@@ -289,7 +282,8 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 4. Script will automatically install Waydroid together with the custom config. Install will roughly take around 5mins depending on the internet connection speed.
 5. Once done exit the script and go back to Game Mode.
 
-To change the artifact source later, run:
+Advanced users can change the artifact source, but should do so only when they
+fully trust it: bundle packages are installed into SteamOS as root.
 
 ```sh
 ./steamos-waydroid-installer.sh --configure-artifacts
@@ -326,13 +320,18 @@ However if you use Bluetooth headphones it will interfere with controller detect
 </details>
 
 # I dont want this anymore! I want to uninstall!
-1. Go to Desktop Mode.
-2. There will be an icon called Waydroid Toolbox on the desktop.
-3. Launch that icon and select UNINSTALL.
-![image](https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer/assets/98122529/afdf9e95-7ccf-4bc8-9400-4b8332c5afe9)
+Exit Steam completely in Desktop Mode, open Konsole, and run:
+
+```sh
+./steamos-waydroid-installer.sh --uninstall
+```
+
+This removes Waydroid and Android data but retains the checkout and verified
+bundles for reinstalling. To remove those prerequisites as well, use
+`--uninstall-all`. Both modes require an explicit typed confirmation.
 
 # Troubleshooting / Filing Bug Reports
-1. If you encounter an issue with the script, try to [uninstall](https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer/tree/main#i-dont-want-this-anymore-i-want-to-uninstall), clone the repo again and perform an install.\
+1. If you encounter an issue with the script, try to [uninstall](#i-dont-want-this-anymore-i-want-to-uninstall), clone the repo again and perform an install.\
 Reason for that - you might be using an older version of my script and a new version might have already fixed your issue.
 2. If uninstall / reinstall didn't help, open an issue and please be descriptive as possible. \
 At the minimum include this when filing an issue - \
@@ -349,10 +348,10 @@ Answer - This issue happens if Steam client cant be run because the script was c
 When there is a SteamOS update the waydroid will be wiped. This is normal behavior due to how SteamOS applies updates. \
 If the private Android image and launcher still exist, restore the erased host integration without reinitializing Android:
 ```sh
-cd ~/steamos-waydroid-installer
+cd ~/steamos-waydroid-personal
 ./steamos-waydroid-installer.sh --repair
 ```
-Repair requires a private bundle containing target-built host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
+Repair requires a published bundle containing target-built host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
 
 # Mini-guides for Steam Deck Android Waydroid
 These mini guides are tailor-fitted for the Steam Deck that uses the script provided in this repo.

@@ -6,11 +6,12 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+DECK_RUNTIME_ROOT="$REPO_ROOT/libexec/steamos-waydroid"
 
 enable_build_failure_report
 set_build_report_stage preflight
 
-require_steamos_root
+require_copied_build_root
 
 for command_name in git makepkg meson ninja patchelf pkg-config readelf ldd; do
     require_command "$command_name"
@@ -81,7 +82,7 @@ if (( ${#missing_pkg_config_dependencies[@]} > 0 )); then
     for dependency in "${missing_pkg_config_dependencies[@]}"; do
         pkg-config --print-errors --exists "$dependency" 2>&1 || true
     done
-    die "restore the development payloads described in build/README-personal-build.md"
+    die "restore the development payloads described in maintainer/README.md"
 fi
 
 SOURCE_ROOT="${SOURCE_ROOT:-/work/src}"
@@ -227,13 +228,13 @@ cp -a "$PRIVATE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
 cp -a "$OUTPUT_ROOT/.host-packages-$BUNDLE_VERSION"/. "$STAGING_ROOT/packages/"
 install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env"
 install -m 0755 \
-    "$SCRIPT_DIR/check-bundle-target.sh" \
+    "$DECK_RUNTIME_ROOT/check-bundle-target.sh" \
     "$STAGING_ROOT/tools/check-bundle-target.sh"
 install -m 0755 \
-    "$SCRIPT_DIR/compatibility-report.sh" \
+    "$DECK_RUNTIME_ROOT/compatibility-report.sh" \
     "$STAGING_ROOT/tools/compatibility-report.sh"
 install -m 0644 \
-    "$SCRIPT_DIR/lib/target-fingerprint.sh" \
+    "$DECK_RUNTIME_ROOT/lib/target-fingerprint.sh" \
     "$STAGING_ROOT/tools/target-fingerprint.sh"
 
 patchelf --set-rpath '$ORIGIN/../lib' "$STAGING_ROOT/bin/cage"
@@ -246,8 +247,9 @@ cp "$SOURCE_ROOT/wlr-randr/LICENSE" "$STAGING_ROOT/licenses/wlr-randr.txt"
 # resolve wlroots through its relative RUNPATH from the staged bundle.
 unset LD_LIBRARY_PATH PKG_CONFIG_PATH
 set_build_report_stage bundle-verification
-"$SCRIPT_DIR/verify-private-bundle.sh" "$STAGING_ROOT"
-"$SCRIPT_DIR/check-bundle-target.sh" "$STAGING_ROOT"
+STEAMOS_WAYDROID_INTERNAL=1 \
+    "$DECK_RUNTIME_ROOT/verify-private-bundle.sh" "$STAGING_ROOT"
+"$DECK_RUNTIME_ROOT/check-bundle-target.sh" "$STAGING_ROOT"
 printf 'verified\n' > "$STAGING_ROOT/.verified"
 mv "$STAGING_ROOT" "$BUNDLE_ROOT"
 
@@ -255,4 +257,4 @@ if [[ -n ${HOST_UID:-} && -n ${HOST_GID:-} ]]; then
     chown -R "$HOST_UID:$HOST_GID" "$BUNDLE_ROOT"
 fi
 
-printf '\nPrivate bundle created at:\n  %s\n' "$BUNDLE_ROOT"
+printf '\nTarget-built bundle created at:\n  %s\n' "$BUNDLE_ROOT"

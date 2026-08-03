@@ -17,6 +17,11 @@ elif [[ $# -ne 0 ]]; then
     exit 1
 fi
 
+if [[ ${STEAMOS_WAYDROID_INTERNAL:-} != 1 ]]; then
+    printf 'error: run ./steamos-waydroid-installer.sh --uninstall or --uninstall-all\n' >&2
+    exit 1
+fi
+
 restore_readonly() {
     if [[ "$READONLY_DISABLED" == true ]]; then
         printf '\nRe-enabling the SteamOS read-only filesystem...\n'
@@ -49,15 +54,15 @@ This permanently deletes this installer's Waydroid instance, including:
 
 By default it intentionally keeps:
   - this Git checkout
-  - ~/.local/opt/steamos-waydroid (the verified private Cage bundle)
+  - ~/.local/opt/steamos-waydroid (the verified target-built bundles)
 
-These retained prerequisites are required to run the personal installer again.
+These retained prerequisites are required to run the installer again.
 EOF
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     cat <<'EOF'
 
-Full-process mode also deletes the Git checkout and private Cage bundle so the
+Full-process mode also deletes the Git checkout and target-built bundles so the
 Deck-side clone, artifact pull, verification and activation can all be tested.
 SSH keys and SSH host configuration are retained.
 EOF
@@ -150,8 +155,21 @@ if [[ "$FULL_PROCESS_RESET" == true ]]; then
     printf 'Removing Deck-side bootstrap prerequisites...\n'
     sudo rm -rf -- \
         "$HOME/.local/opt/steamos-waydroid" \
-        "$HOME/.local/share/steamos-waydroid-installer" \
-        "$HOME/steamos-waydroid-personal-installer"
+        "$HOME/.local/share/steamos-waydroid-installer"
+    case "$SCRIPT_DIR" in
+        "$HOME"/*)
+            if [[ -d "$SCRIPT_DIR/.git" && -f "$SCRIPT_DIR/steamos-waydroid-installer.sh" ]]; then
+                sudo rm -rf -- "$SCRIPT_DIR"
+            else
+                printf 'Checkout retained because it could not be identified safely: %s\n' \
+                    "$SCRIPT_DIR" >&2
+            fi
+            ;;
+        *)
+            printf 'Checkout retained because it is outside the deck home: %s\n' \
+                "$SCRIPT_DIR" >&2
+            ;;
+    esac
 fi
 
 cat <<'EOF'
@@ -164,5 +182,5 @@ EOF
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     printf 'Clone the Git repository again, then pull and install the published bundle.\n'
 else
-    printf 'The Git checkout and verified private Cage bundle were retained.\n'
+    printf 'The Git checkout and verified target-built bundles were retained.\n'
 fi

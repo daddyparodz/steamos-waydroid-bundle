@@ -86,11 +86,11 @@ current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
     fi
 
     printf '\n## Suggested commands\n\n```bash\n'
-    printf 'build/sync-steamos-rootfs.sh\n'
-    printf 'build/enter-build-rootfs.sh\n'
-    printf '# inside the rootfs: /repo/build/build-private-bundle.sh\n'
-    printf 'build/publish-private-bundle.sh\n'
-    printf '# on the Deck: build/install-private-bundle-on-deck.sh\n'
+    printf 'maintainer/sync-steamos-rootfs.sh\n'
+    printf 'maintainer/enter-build-rootfs.sh\n'
+    printf '# inside the rootfs: /repo/maintainer/build-private-bundle.sh\n'
+    printf 'maintainer/publish-private-bundle.sh\n'
+    printf '# on the Deck: ./steamos-waydroid-installer.sh --repair\n'
     printf '```\n'
 } > "$OUTPUT_FILE"
 

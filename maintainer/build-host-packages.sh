@@ -12,8 +12,7 @@ if [[ -n ${HOST_PACKAGE_LOG:-} ]]; then
     exec > >(tee -a "$HOST_PACKAGE_LOG") 2>&1
 fi
 
-require_steamos_root
-[[ $EUID -eq 0 ]] || die "run this script as root inside the copied SteamOS rootfs"
+require_copied_build_root
 
 for command_name in bsdtar cython getent grep groupadd make makepkg pacman patch pkg-config python readelf setpriv tee useradd; do
     require_command "$command_name"

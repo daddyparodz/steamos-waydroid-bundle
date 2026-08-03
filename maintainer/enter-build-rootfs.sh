@@ -14,15 +14,19 @@ require_command sudo
 resolve_bundle_version
 
 [[ -n "$TARGET_WORK_ROOT" ]] || \
-    die "target build environment missing; rerun build/sync-steamos-rootfs.sh"
+    die "target build environment missing; rerun maintainer/sync-steamos-rootfs.sh"
 ROOTFS_ROOT="$TARGET_WORK_ROOT/rootfs"
 SOURCE_ROOT="$BUILD_WORK_ROOT/src"
 OUTPUT_ROOT="$BUILD_WORK_ROOT/out"
 
 [[ -x "$ROOTFS_ROOT/usr/bin/bash" ]] || \
-    die "SteamOS rootfs not found; run build/sync-steamos-rootfs.sh first"
+    die "SteamOS rootfs not found; run maintainer/sync-steamos-rootfs.sh first"
 [[ $(stat -c '%u:%g' "$ROOTFS_ROOT") == 0:0 ]] || \
-    die "SteamOS rootfs must be owned by root; rerun build/sync-steamos-rootfs.sh"
+    die "SteamOS rootfs must be owned by root; rerun maintainer/sync-steamos-rootfs.sh"
+[[ -r "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" ]] && \
+    grep -Fx 'STEAMOS_WAYDROID_COPIED_BUILD_ROOT=1' \
+        "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" > /dev/null || \
+    die "copied-build-root marker is missing; rerun maintainer/sync-steamos-rootfs.sh"
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 
@@ -32,9 +36,9 @@ if (( $# > 0 )); then
 fi
 
 printf 'Entering the copied SteamOS rootfs.\n'
-printf 'First prepare with: /repo/build/prepare-build-rootfs.sh\n'
+printf 'First prepare with: /repo/maintainer/prepare-build-rootfs.sh\n'
 printf 'Then build the private compositor and host packages with:\n'
-printf '  /repo/build/build-private-bundle.sh\n\n'
+printf '  /repo/maintainer/build-private-bundle.sh\n\n'
 
 sudo systemd-nspawn \
     --directory="$ROOTFS_ROOT" \

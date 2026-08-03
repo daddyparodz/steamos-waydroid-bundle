@@ -116,9 +116,9 @@ resolve_bundle_version() {
     selected_fingerprint="$TARGET_FINGERPRINT_FILE"
     if [[ "$BUNDLE_VERSION" == auto ]]; then
         [[ -r "$selected_fingerprint" ]] || \
-            die "target fingerprint missing; run build/sync-steamos-rootfs.sh first"
+            die "target fingerprint missing; run maintainer/sync-steamos-rootfs.sh first"
         # shellcheck source=target-fingerprint.sh
-        source "$BUILD_SCRIPT_DIR/lib/target-fingerprint.sh"
+        source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
         BUNDLE_VERSION="$(fingerprint_value \
             "$selected_fingerprint" SUGGESTED_BUNDLE_VERSION)"
     else
@@ -152,4 +152,16 @@ require_steamos_root() {
     [[ ${ID:-} == steamos ]] || \
         die "this build step must run inside the copied SteamOS rootfs"
     [[ $(uname -m) == x86_64 ]] || die "only x86_64 is supported"
+}
+
+require_copied_build_root() {
+    require_steamos_root
+    [[ $EUID -eq 0 ]] || \
+        die "this step must run as root inside the copied SteamOS build root"
+    [[ -r /.steamos-waydroid-copied-build-root ]] && \
+        grep -Fx 'STEAMOS_WAYDROID_COPIED_BUILD_ROOT=1' \
+            /.steamos-waydroid-copied-build-root > /dev/null || \
+        die "copied-build-root marker is missing; refusing to modify the live Steam Deck"
+    [[ -d /repo/maintainer && -d /repo/libexec/steamos-waydroid && -d /work ]] || \
+        die "required read-only repository and build-work mounts are missing"
 }

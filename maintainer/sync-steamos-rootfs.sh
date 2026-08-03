@@ -15,7 +15,7 @@ require_command sha256sum
 
 DECK_HOST="${DECK_HOST:-}"
 [[ -n "$DECK_HOST" ]] || \
-    die "set DECK_HOST in $BUILD_CONFIG_FILE (see build/config.example.env)"
+    die "set DECK_HOST in $BUILD_CONFIG_FILE (see maintainer/config.example.env)"
 
 mkdir -p "$BUILD_WORK_ROOT"
 
@@ -29,7 +29,7 @@ fingerprint_capture="$(mktemp "$BUILD_WORK_ROOT/.target-fingerprint.XXXXXX")"
 trap 'rm -f -- "$fingerprint_capture"' EXIT
 ssh "$DECK_HOST" \
     "FINGERPRINT_RUN_MAIN=1 WLROOTS_VERSION='$WLROOTS_VERSION' BUNDLE_REVISION='$BUNDLE_REVISION' bash -s -- collect" \
-    < "$SCRIPT_DIR/lib/target-fingerprint.sh" \
+    < "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh" \
     > "$fingerprint_capture"
 suggested_bundle_version="$(awk -F= \
     '$1 == "SUGGESTED_BUNDLE_VERSION" {print $2; exit}' \
@@ -126,8 +126,14 @@ rsync -aH --info=progress2 \
     "$SNAPSHOT_ROOT/etc/"
 
 printf 'Materialising the rootfs with root ownership on Fedora...\n'
+# An interrupted refresh must not leave an older safety marker on a partially
+# updated rootfs. Restore it only after the copy and ownership pass complete.
+sudo rm -f -- "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root"
 sudo rsync -aH "$SNAPSHOT_ROOT/" "$ROOTFS_ROOT/"
 sudo chown -R root:root "$ROOTFS_ROOT"
+printf '%s\n' 'STEAMOS_WAYDROID_COPIED_BUILD_ROOT=1' | \
+    sudo tee "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" > /dev/null
+sudo chmod 0644 "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root"
 
 sudo install -d -m 0755 \
     "$ROOTFS_ROOT/dev" \

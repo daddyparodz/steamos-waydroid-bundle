@@ -4,7 +4,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_FILE="${DECK_CONFIG_FILE:-$REPO_ROOT/.deck-config.env}"
 ALLOW_TARGET_MISMATCH=false
 
@@ -20,13 +20,16 @@ die() {
     exit 1
 }
 
+[[ ${STEAMOS_WAYDROID_INTERNAL:-} == 1 ]] || \
+    die "this is an internal helper; run ./steamos-waydroid-installer.sh"
+
 [[ "$(id -un)" == deck ]] || die "run this script as the deck user"
 [[ -r /etc/os-release ]] || die "cannot read /etc/os-release"
 # shellcheck source=/dev/null
 source /etc/os-release
 [[ ${ID:-} == steamos ]] || die "this script may only run on SteamOS"
 [[ -f "$CONFIG_FILE" ]] || \
-    die "run build/configure-deck-artifacts.sh or copy build/deck-config.example.env to .deck-config.env"
+    die "run ./steamos-waydroid-installer.sh --configure-artifacts or create .deck-config.env"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 
@@ -125,7 +128,7 @@ if [[ "$BUNDLE_VERSION" == auto ]]; then
         fi
     fi
     [[ -n "$BUNDLE_VERSION" ]] || \
-        die "no published private bundle matches target $CURRENT_TARGET_ENVIRONMENT"
+        die "no published bundle matches target $CURRENT_TARGET_ENVIRONMENT"
 fi
 [[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe BUNDLE_VERSION"
 
@@ -135,7 +138,7 @@ MANIFEST_NAME="$BUNDLE_VERSION.manifest"
 TARGET_ROOT="$PROJECT_ROOT/builds/$BUNDLE_VERSION"
 STAGING_ROOT="$PROJECT_ROOT/.$BUNDLE_VERSION.staging"
 
-printf 'Fetching private bundle %s...\n' "$BUNDLE_VERSION"
+printf 'Fetching target-built bundle %s...\n' "$BUNDLE_VERSION"
 fetch_file "$MANIFEST_NAME"
 manifest_bundle_version="$(manifest_value \
     "$DOWNLOAD_ROOT/$MANIFEST_NAME" bundle_version)"
@@ -204,4 +207,4 @@ fi
     ln -sfn "builds/$BUNDLE_VERSION" current
 )
 
-printf '\nPrivate bundle installed and activated:\n  %s\n' "$TARGET_ROOT"
+printf '\nTarget-built bundle installed and activated:\n  %s\n' "$TARGET_ROOT"

@@ -40,7 +40,7 @@ catalog_assets=(
 )
 for asset in "${immutable_assets[@]}" "${catalog_assets[@]}"; do
     [[ -f "$asset" ]] || \
-        die "published asset is missing: $asset (run build/publish-private-bundle.sh first)"
+        die "published asset is missing: $asset (run maintainer/publish-private-bundle.sh first)"
 done
 
 SOURCE_REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"
@@ -48,11 +48,11 @@ gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_REVISION" > /dev/null 2>&1 || \
     die "source revision $SOURCE_REVISION is not available in $GITHUB_REPOSITORY; push it first"
 if ! gh release view "$GITHUB_RELEASE_TAG" \
     --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-    printf 'Creating private bundle Release %s...\n' "$GITHUB_RELEASE_TAG"
+    printf 'Creating target-bundle Release %s...\n' "$GITHUB_RELEASE_TAG"
     gh release create "$GITHUB_RELEASE_TAG" \
         --repo "$GITHUB_REPOSITORY" \
         --target "$SOURCE_REVISION" \
-        --title "Private SteamOS Waydroid bundles" \
+        --title "SteamOS Waydroid target bundles" \
         --notes "Target-specific verified SteamOS Waydroid bundles." \
         --latest=false
 fi
@@ -82,7 +82,7 @@ gh release upload "$GITHUB_RELEASE_TAG" \
     --clobber \
     --repo "$GITHUB_REPOSITORY"
 
-printf '\nPrivate GitHub bundle published:\n'
+printf '\nGitHub bundle published:\n'
 printf '  repository: %s\n' "$GITHUB_REPOSITORY"
 printf '  release:    %s\n' "$GITHUB_RELEASE_TAG"
 printf '  bundle:     %s\n' "$BUNDLE_VERSION"

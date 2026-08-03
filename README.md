@@ -282,6 +282,11 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 4. Script will automatically install Waydroid together with the custom config. Install will roughly take around 5mins depending on the internet connection speed.
 5. Once done exit the script and go back to Game Mode.
 
+If a matching Waydroid or Nested Desktop Steam shortcut already exists, the
+installer shows the matches in Konsole and offers three choices: add another
+shortcut, delete all matches and replace them with one clean shortcut using the
+bundled artwork, or do nothing. Delete/Replace is the default.
+
 Advanced users can change the artifact source, but should do so only when they
 fully trust it: bundle packages are installed into SteamOS as root.
 

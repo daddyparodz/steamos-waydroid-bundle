@@ -143,12 +143,19 @@ def field(shortcut, name, default=""):
 
 
 def is_target(shortcut, target):
+    return match_kind(shortcut, target) is not None
+
+
+def match_kind(shortcut, target):
     definition = TARGETS[target]
     app_name = str(field(shortcut, "AppName")).casefold()
     executable = str(field(shortcut, "Exe")).replace("\\", "/").casefold()
+    if any(candidate.casefold() in executable
+           for candidate in definition["executables"]):
+        return "executable-path match"
     if app_name == definition["name"].casefold():
-        return True
-    return any(candidate.casefold() in executable for candidate in definition["executables"])
+        return "name-only match"
+    return None
 
 
 def load_shortcuts(path):
@@ -166,6 +173,20 @@ def matching_shortcuts(path, target):
     _, shortcuts = load_shortcuts(path)
     return [shortcut for shortcut in shortcuts.values()
             if isinstance(shortcut, dict) and is_target(shortcut, target)]
+
+
+def describe_shortcuts(path, target):
+    matches = matching_shortcuts(path, target)
+    for index, shortcut in enumerate(matches, start=1):
+        kind = match_kind(shortcut, target)
+        app_name = str(field(shortcut, "AppName", "(unnamed)"))
+        executable = str(field(shortcut, "Exe", "(missing executable)"))
+        # Keep one record on one terminal line even if a malformed local VDF
+        # contains control characters.
+        app_name = " ".join(app_name.split())
+        executable = " ".join(executable.split())
+        print(f"{index}. [{kind}] {app_name}: {executable}")
+    return 0 if matches else 1
 
 
 def write_shortcuts(path, data, shortcuts):
@@ -255,7 +276,8 @@ def remove_artwork(path, shortcut):
     return removed
 
 
-def reconcile(home, path, target, artwork_dir=None, artwork=None, icon=None):
+def reconcile(home, path, target, artwork_dir=None, artwork=None, icon=None,
+              keep_duplicates=False):
     if path is None or not path.is_file():
         print("No shortcuts.vdf found; add the shortcut first.", file=sys.stderr)
         return 1
@@ -267,7 +289,10 @@ def reconcile(home, path, target, artwork_dir=None, artwork=None, icon=None):
         print(f"No {target} Steam shortcut found.", file=sys.stderr)
         return 1
 
-    primary = matches[0]
+    # steamos-add-to-steam appends a newly created shortcut. When the user
+    # deliberately requested another shortcut, decorate that newest match and
+    # leave all earlier matches untouched.
+    primary = matches[-1] if keep_duplicates else matches[0]
     definition = TARGETS[target]
     primary["AppName"] = definition["name"]
 
@@ -280,9 +305,10 @@ def reconcile(home, path, target, artwork_dir=None, artwork=None, icon=None):
         print(f"No supported artwork files found in {artwork_dir}.", file=sys.stderr)
         return 1
 
-    duplicate_ids = {id(shortcut) for shortcut in matches[1:]}
+    duplicates = [] if keep_duplicates else matches[1:]
+    duplicate_ids = {id(shortcut) for shortcut in duplicates}
     retained = [shortcut for shortcut in shortcuts if id(shortcut) not in duplicate_ids]
-    for duplicate in matches[1:]:
+    for duplicate in duplicates:
         remove_artwork(path, duplicate)
 
     if assets:
@@ -292,7 +318,11 @@ def reconcile(home, path, target, artwork_dir=None, artwork=None, icon=None):
     write_shortcuts(path, data, retained)
 
     removed = len(matches) - 1
-    print(f"Kept one {target} Steam shortcut; removed {removed} duplicate(s).")
+    if keep_duplicates:
+        print(f"Decorated the newly added {target} shortcut; kept all "
+              f"{len(matches)} matching shortcut(s).")
+    else:
+        print(f"Kept one {target} Steam shortcut; removed {removed} duplicate(s).")
     return 0
 
 
@@ -317,22 +347,29 @@ def remove_target(path, target):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("has", "reconcile", "remove"), nargs="?",
+    parser.add_argument("action", choices=("has", "describe", "reconcile", "remove"), nargs="?",
                         default="reconcile")
     parser.add_argument("target", choices=tuple(TARGETS), nargs="?", default="waydroid")
     parser.add_argument("--artwork-dir", type=Path)
     parser.add_argument("--artwork", type=Path)
     parser.add_argument("--icon", type=Path)
+    parser.add_argument("--keep-duplicates", action="store_true")
     parser.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    path = shortcuts_path(args.home)
-    if args.action == "has":
-        return 0 if matching_shortcuts(path, args.target) else 1
-    if args.action == "remove":
-        return remove_target(path, args.target)
-    return reconcile(args.home, path, args.target, args.artwork_dir,
-                     args.artwork, args.icon)
+    try:
+        path = shortcuts_path(args.home)
+        if args.action == "has":
+            return 0 if matching_shortcuts(path, args.target) else 1
+        if args.action == "describe":
+            return describe_shortcuts(path, args.target)
+        if args.action == "remove":
+            return remove_target(path, args.target)
+        return reconcile(args.home, path, args.target, args.artwork_dir,
+                         args.artwork, args.icon, args.keep_duplicates)
+    except (OSError, ValueError, EOFError, struct.error) as error:
+        print(f"Unable to read or update Steam shortcuts: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

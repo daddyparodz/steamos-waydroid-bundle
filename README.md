@@ -358,6 +358,13 @@ cd ~/steamos-waydroid-personal
 ```
 Repair requires a published bundle containing target-built host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
 
+To repair the SteamOS host integration and then inspect, replace, or recreate
+the Game Mode shortcuts as part of the same run, use:
+
+```sh
+./steamos-waydroid-installer.sh --repair --repair-shortcuts
+```
+
 # Mini-guides for Steam Deck Android Waydroid
 These mini guides are tailor-fitted for the Steam Deck that uses the script provided in this repo.
 

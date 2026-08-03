@@ -4,25 +4,51 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$SCRIPT_DIR" || exit 1
 
 REPAIR_MODE=false
+REPAIR_SHORTCUTS=false
 CONFIGURE_ARTIFACTS=false
 UNINSTALL_MODE=false
 FULL_UNINSTALL_MODE=false
-if [ "$#" -gt 1 ]
+PRIMARY_MODE_COUNT=0
+usage () {
+	echo "usage: $0 [--repair [--repair-shortcuts] | --configure-artifacts | --uninstall | --uninstall-all]" >&2
+}
+if [ "$#" -gt 2 ]
 then
-	echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all]" >&2
+	usage
 	exit 1
 fi
-case "${1:-}" in
-	"") ;;
-	--repair) REPAIR_MODE=true ;;
-	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
-	--uninstall) UNINSTALL_MODE=true ;;
-	--uninstall-all) FULL_UNINSTALL_MODE=true ;;
-	*)
-		echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all]" >&2
-		exit 1
-		;;
-esac
+for argument in "$@"
+do
+	case "$argument" in
+		--repair)
+			REPAIR_MODE=true
+			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
+			;;
+		--repair-shortcuts) REPAIR_SHORTCUTS=true ;;
+		--configure-artifacts)
+			CONFIGURE_ARTIFACTS=true
+			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
+			;;
+		--uninstall)
+			UNINSTALL_MODE=true
+			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
+			;;
+		--uninstall-all)
+			FULL_UNINSTALL_MODE=true
+			PRIMARY_MODE_COUNT=$((PRIMARY_MODE_COUNT + 1))
+			;;
+		*)
+			usage
+			exit 1
+			;;
+	esac
+done
+if [ "$PRIMARY_MODE_COUNT" -gt 1 ] || \
+	{ [ "$REPAIR_SHORTCUTS" = true ] && [ "$REPAIR_MODE" != true ]; }
+then
+	usage
+	exit 1
+fi
 
 clear
 
@@ -186,6 +212,135 @@ prompt_return_to_gaming_mode () {
 	if zenity --question --text="Do you Want to Return to Gaming Mode?"
 	then
 		qdbus org.kde.Shutdown /Shutdown org.kde.Shutdown.logout
+	fi
+}
+
+# Return success when a new shortcut should be created. When matching entries
+# exist, the user can add another, replace all matches, or leave them alone.
+shortcut_should_be_created () {
+	shortcut_target=$1
+	shortcut_label=$2
+	SHORTCUT_KEEP_DUPLICATES=false
+	python3 "$WORKING_DIR/extras/icon.py" has "$shortcut_target"
+	shortcut_status=$?
+	case "$shortcut_status" in
+		0) ;;
+		1) return 0 ;;
+		*)
+			echo "Warning: Steam shortcuts could not be inspected; $shortcut_label will not be changed." >&2
+			return 1
+			;;
+	esac
+
+	echo
+	echo "Matching $shortcut_label Steam shortcut(s):"
+	python3 "$WORKING_DIR/extras/icon.py" describe "$shortcut_target"
+	shortcut_choice=$(zenity --list --radiolist \
+		--title="SteamOS Waydroid Installer" \
+		--text="Choose what to do with the matching $shortcut_label shortcut(s). Details are shown in Konsole." \
+		--column="Select" \
+		--column="Action" \
+		--column="Description" \
+		FALSE "Add new shortcut" "Keep all existing shortcuts and add another" \
+		TRUE "Delete/Replace" "Remove all matches and create one new shortcut" \
+		FALSE "Do nothing" "Leave shortcuts and artwork unchanged" \
+		--width=760 --height=300) || shortcut_choice="Do nothing"
+
+	case "$shortcut_choice" in
+		"Add new shortcut")
+			echo "Existing $shortcut_label shortcut(s) will be kept and another will be added."
+			SHORTCUT_KEEP_DUPLICATES=true
+			return 0
+			;;
+		"Delete/Replace")
+			if ! python3 "$WORKING_DIR/extras/icon.py" remove "$shortcut_target"
+			then
+				echo "Warning: $shortcut_label could not be removed; it will not be recreated." >&2
+				return 1
+			fi
+			return 0
+			;;
+		"Do nothing"|"")
+			echo "$shortcut_label shortcut and artwork were left unchanged."
+			return 1
+			;;
+		*)
+			echo "Warning: unknown shortcut action; $shortcut_label was left unchanged." >&2
+			return 1
+			;;
+	esac
+}
+
+repair_game_mode_shortcuts () {
+	echo "Checking Game Mode shortcuts..."
+	logged_in_user=$(whoami)
+	logged_in_home=$(eval echo "~$logged_in_user")
+	launcher_script="${logged_in_home}/Android_Waydroid/Android_Waydroid_Cage.sh"
+	if [ -d "${logged_in_home}/Android_Waydroid" ]
+	then
+		mkdir -p "${logged_in_home}/Android_Waydroid/icons"
+		cp "$WORKING_DIR/extras/icon.py" \
+			"${logged_in_home}/Android_Waydroid/steam-shortcuts.py"
+		cp -a "$WORKING_DIR/extras/icons/." \
+			"${logged_in_home}/Android_Waydroid/icons/"
+	fi
+
+	if shortcut_should_be_created waydroid Waydroid
+	then
+		if [ ! -f "$launcher_script" ]
+		then
+			echo "Error: Launcher script '$launcher_script' not found." >&2
+		else
+			chmod +x "$launcher_script"
+			TMP_DESKTOP="/tmp/waydroid-temp.desktop"
+			cat > "$TMP_DESKTOP" << EOF
+[Desktop Entry]
+Name=Waydroid
+Exec=${launcher_script}
+Path=${logged_in_home}/Android_Waydroid
+Type=Application
+Terminal=false
+Icon=application-default-icon
+EOF
+			chmod +x "$TMP_DESKTOP"
+			if steamos-add-to-steam "$TMP_DESKTOP"
+			then
+				sleep 3
+				shortcut_reconcile_args=(
+					reconcile waydroid
+					--artwork-dir "$WORKING_DIR/extras/icons/waydroid"
+				)
+				if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
+				then
+					shortcut_reconcile_args+=(--keep-duplicates)
+				fi
+				python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
+					echo "Warning: Waydroid artwork could not be installed." >&2
+			else
+				echo "Warning: Waydroid shortcut could not be created." >&2
+			fi
+			rm -f "$TMP_DESKTOP"
+		fi
+	fi
+
+	if shortcut_should_be_created nested-desktop "Nested Desktop"
+	then
+		if steamos-add-to-steam /usr/bin/steamos-nested-desktop &> /dev/null
+		then
+			sleep 3
+			shortcut_reconcile_args=(
+				reconcile nested-desktop
+				--artwork-dir "$WORKING_DIR/extras/icons/nested-desktop"
+			)
+			if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
+			then
+				shortcut_reconcile_args+=(--keep-duplicates)
+			fi
+			python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
+				echo "Warning: Nested Desktop artwork could not be installed." >&2
+		else
+			echo "Warning: Nested Desktop shortcut could not be created." >&2
+		fi
 	fi
 }
 
@@ -436,6 +591,10 @@ then
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable
 	trap - EXIT HUP INT TERM
 	echo Waydroid host integration has been repaired. Android data was not reinitialized or modified.
+	if [ "$REPAIR_SHORTCUTS" = true ]
+	then
+		repair_game_mode_shortcuts
+	fi
 	prompt_return_to_gaming_mode
 	exit 0
 fi
@@ -541,124 +700,7 @@ else
 	mv extras/waydroid.img ~/Android_Waydroid/waydroid.img
 fi
 
-# Create each Game Mode shortcut once. If a path or name match already exists,
-# show it in the terminal and let the user decide whether it should be replaced.
-shortcut_should_be_created () {
-	shortcut_target=$1
-	shortcut_label=$2
-	SHORTCUT_KEEP_DUPLICATES=false
-	python3 "$WORKING_DIR/extras/icon.py" has "$shortcut_target"
-	shortcut_status=$?
-	case "$shortcut_status" in
-		0) ;;
-		1) return 0 ;;
-		*)
-			echo "Warning: Steam shortcuts could not be inspected; $shortcut_label will not be changed." >&2
-			return 1
-			;;
-	esac
-
-	echo
-	echo "Matching $shortcut_label Steam shortcut(s):"
-	python3 "$WORKING_DIR/extras/icon.py" describe "$shortcut_target"
-	shortcut_choice=$(zenity --list --radiolist \
-		--title="SteamOS Waydroid Installer" \
-		--text="Choose what to do with the matching $shortcut_label shortcut(s). Details are shown in Konsole." \
-		--column="Select" \
-		--column="Action" \
-		--column="Description" \
-		FALSE "Add new shortcut" "Keep all existing shortcuts and add another" \
-		TRUE "Delete/Replace" "Remove all matches and create one new shortcut" \
-		FALSE "Do nothing" "Leave shortcuts and artwork unchanged" \
-		--width=760 --height=300) || shortcut_choice="Do nothing"
-
-	case "$shortcut_choice" in
-		"Add new shortcut")
-			echo "Existing $shortcut_label shortcut(s) will be kept and another will be added."
-			SHORTCUT_KEEP_DUPLICATES=true
-			return 0
-			;;
-		"Delete/Replace")
-			if ! python3 "$WORKING_DIR/extras/icon.py" remove "$shortcut_target"
-			then
-				echo "Warning: $shortcut_label could not be removed; it will not be recreated." >&2
-				return 1
-			fi
-			return 0
-			;;
-		"Do nothing"|"")
-			echo "$shortcut_label shortcut and artwork were left unchanged."
-			return 1
-			;;
-		*)
-			echo "Warning: unknown shortcut action; $shortcut_label was left unchanged." >&2
-			return 1
-			;;
-	esac
-}
-
-echo "Checking Game Mode shortcuts..."
-logged_in_user=$(whoami)
-logged_in_home=$(eval echo "~$logged_in_user")
-launcher_script="${logged_in_home}/Android_Waydroid/Android_Waydroid_Cage.sh"
-
-if shortcut_should_be_created waydroid Waydroid
-then
-	if [ ! -f "$launcher_script" ]
-	then
-		echo "Error: Launcher script '$launcher_script' not found." >&2
-	else
-		chmod +x "$launcher_script"
-		TMP_DESKTOP="/tmp/waydroid-temp.desktop"
-		cat > "$TMP_DESKTOP" << EOF
-[Desktop Entry]
-Name=Waydroid
-Exec=${launcher_script}
-Path=${logged_in_home}/Android_Waydroid
-Type=Application
-Terminal=false
-Icon=application-default-icon
-EOF
-		chmod +x "$TMP_DESKTOP"
-		if steamos-add-to-steam "$TMP_DESKTOP"
-		then
-			sleep 3
-			shortcut_reconcile_args=(
-				reconcile waydroid
-				--artwork-dir "$WORKING_DIR/extras/icons/waydroid"
-			)
-			if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
-			then
-				shortcut_reconcile_args+=(--keep-duplicates)
-			fi
-			python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
-				echo "Warning: Waydroid artwork could not be installed." >&2
-		else
-			echo "Warning: Waydroid shortcut could not be created." >&2
-		fi
-		rm -f "$TMP_DESKTOP"
-	fi
-fi
-
-if shortcut_should_be_created nested-desktop "Nested Desktop"
-then
-	if steamos-add-to-steam /usr/bin/steamos-nested-desktop &> /dev/null
-	then
-		sleep 3
-		shortcut_reconcile_args=(
-			reconcile nested-desktop
-			--artwork-dir "$WORKING_DIR/extras/icons/nested-desktop"
-		)
-		if [ "$SHORTCUT_KEEP_DUPLICATES" = true ]
-		then
-			shortcut_reconcile_args+=(--keep-duplicates)
-		fi
-		python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" || \
-			echo "Warning: Nested Desktop artwork could not be installed." >&2
-	else
-		echo "Warning: Nested Desktop shortcut could not be created." >&2
-	fi
-fi
+repair_game_mode_shortcuts
 
 # all done! Display dialog box for Gaming Mode
 prompt_return_to_gaming_mode

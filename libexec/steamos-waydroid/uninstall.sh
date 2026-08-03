@@ -4,9 +4,10 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 ANDROID_HOME="$HOME/Android_Waydroid"
 ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
-SHORTCUT_MANAGER="$SCRIPT_DIR/extras/icon.py"
+SHORTCUT_MANAGER="$PROJECT_ROOT/extras/icon.py"
 READONLY_DISABLED=false
 FULL_PROCESS_RESET=false
 
@@ -133,8 +134,8 @@ sudo rm -f -- \
     "$HOME/Desktop/Waydroid-Toolbox" \
     "$HOME/Desktop/Waydroid-Updater" \
     "$HOME/.local/share/kio/servicemenus/open_as_root.desktop" \
-    "$SCRIPT_DIR/extras/waydroid.img" \
-    "$SCRIPT_DIR/logfile"
+    "$PROJECT_ROOT/extras/waydroid.img" \
+    "$PROJECT_ROOT/logfile"
 # Waydroid and its privileged helpers can leave root-owned files below these
 # user directories. Keep the targets explicit, but remove them as root.
 sudo rm -rf -- \
@@ -156,18 +157,18 @@ if [[ "$FULL_PROCESS_RESET" == true ]]; then
     sudo rm -rf -- \
         "$HOME/.local/opt/steamos-waydroid" \
         "$HOME/.local/share/steamos-waydroid-installer"
-    case "$SCRIPT_DIR" in
+    case "$PROJECT_ROOT" in
         "$HOME"/*)
-            if [[ -d "$SCRIPT_DIR/.git" && -f "$SCRIPT_DIR/steamos-waydroid-installer.sh" ]]; then
-                sudo rm -rf -- "$SCRIPT_DIR"
+            if [[ -d "$PROJECT_ROOT/.git" && -f "$PROJECT_ROOT/steamos-waydroid-installer.sh" ]]; then
+                sudo rm -rf -- "$PROJECT_ROOT"
             else
                 printf 'Checkout retained because it could not be identified safely: %s\n' \
-                    "$SCRIPT_DIR" >&2
+                    "$PROJECT_ROOT" >&2
             fi
             ;;
         *)
             printf 'Checkout retained because it is outside the deck home: %s\n' \
-                "$SCRIPT_DIR" >&2
+                "$PROJECT_ROOT" >&2
             ;;
     esac
 fi

@@ -54,11 +54,11 @@ ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
 if [ "$FULL_UNINSTALL_MODE" = true ]
 then
 	STEAMOS_WAYDROID_INTERNAL=1 \
-		"$WORKING_DIR/reset-personal-install.sh" --full-process
+		"$DECK_RUNTIME/uninstall.sh" --full-process
 	exit $?
 elif [ "$UNINSTALL_MODE" = true ]
 then
-	STEAMOS_WAYDROID_INTERNAL=1 "$WORKING_DIR/reset-personal-install.sh"
+	STEAMOS_WAYDROID_INTERNAL=1 "$DECK_RUNTIME/uninstall.sh"
 	exit $?
 elif [ "$CONFIGURE_ARTIFACTS" = true ]
 then

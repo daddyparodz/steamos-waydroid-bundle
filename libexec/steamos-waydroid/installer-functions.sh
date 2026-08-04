@@ -51,12 +51,24 @@ confirm_android_reinstall () {
 
 	cat <<EOF
 
-An existing Android installation was found:
-  $WAYDROID_IMAGE
+Existing Android state was found:
+EOF
+	for existing_path in \
+		"$WAYDROID_IMAGE" \
+		"$HOME/.local/share/waydroid" \
+		"$HOME/waydroid"
+	do
+		if [ -e "$existing_path" ] || [ -L "$existing_path" ]
+		then
+			printf '  %s\n' "$existing_path"
+		fi
+	done
+	cat <<EOF
 
-Android reinstallation creates a new Android instance. The current image will
-be renamed in the same directory instead of deleted, but its applications and
-logins will not appear in the new instance.
+Android reinstallation creates a new Android instance. The current image and
+host-side Android user data will be renamed in place instead of deleted. Its
+applications, settings and logins will not appear in the new instance, but the
+complete previous state will remain available as timestamped archives.
 EOF
 	IFS= read -r -p "Type REINSTALL ANDROID to continue: " confirmation
 	if [ "$confirmation" != "REINSTALL ANDROID" ]
@@ -81,6 +93,10 @@ detach_android_image () {
 			sudo losetup -d "$loop_device"
 		fi
 	done < <(sudo losetup -j "$image_path")
+}
+
+waydroid_mounts_are_active () {
+	findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'
 }
 
 validate_existing_android_image () {
@@ -144,30 +160,197 @@ validate_existing_android_image () {
 	printf 'Existing Android image passed read-only structural validation.\n'
 }
 
-archive_existing_android_image () {
-	local timestamp
+archive_existing_android_state () {
+	local timestamp archive_path source_path
 
-	[ -f "$WAYDROID_IMAGE" ] || return 0
-	detach_android_image "$WAYDROID_IMAGE" || return 1
-	timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-	ARCHIVED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.pre-reinstall-$timestamp"
-	if [ -e "$ARCHIVED_ANDROID_IMAGE" ]
+	ANDROID_REINSTALL_ARCHIVE_READY=false
+	if [ -f "$WAYDROID_IMAGE" ]
 	then
-		echo "Refusing to overwrite an existing Android archive: $ARCHIVED_ANDROID_IMAGE" >&2
+		detach_android_image "$WAYDROID_IMAGE" || return 1
+	else
+		sudo systemctl stop waydroid-container.service 2> /dev/null || true
+	fi
+	if waydroid_mounts_are_active
+	then
+		echo Android reinstallation stopped because a Waydroid mount is still active. >&2
+		findmnt -R /var/lib/waydroid >&2 || true
 		return 1
 	fi
-	mv -- "$WAYDROID_IMAGE" "$ARCHIVED_ANDROID_IMAGE"
-	printf 'Previous Android image archived at: %s\n' "$ARCHIVED_ANDROID_IMAGE"
+
+	timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+	ANDROID_REINSTALL_TIMESTAMP=$timestamp
+	ARCHIVED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.pre-reinstall-$timestamp"
+	ARCHIVED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.pre-reinstall-$timestamp"
+	ARCHIVED_ANDROID_LEGACY_USER_STATE="$HOME/waydroid.pre-reinstall-$timestamp"
+	FAILED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.failed-reinstall-$timestamp"
+	FAILED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.failed-reinstall-$timestamp"
+	FAILED_ANDROID_LEGACY_USER_STATE="$HOME/waydroid.failed-reinstall-$timestamp"
+
+	for archive_path in \
+		"$ARCHIVED_ANDROID_IMAGE" \
+		"$ARCHIVED_ANDROID_USER_STATE" \
+		"$ARCHIVED_ANDROID_LEGACY_USER_STATE" \
+		"$FAILED_ANDROID_IMAGE" \
+		"$FAILED_ANDROID_USER_STATE" \
+		"$FAILED_ANDROID_LEGACY_USER_STATE"
+	do
+		if [ -e "$archive_path" ] || [ -L "$archive_path" ]
+		then
+			echo "Refusing to overwrite an existing Android state path: $archive_path" >&2
+			return 1
+		fi
+	done
+
+	if [ -f "$WAYDROID_IMAGE" ]
+	then
+		if ! sudo mv -- "$WAYDROID_IMAGE" "$ARCHIVED_ANDROID_IMAGE"
+		then
+			return 1
+		fi
+	fi
+	for source_path in "$HOME/.local/share/waydroid" "$HOME/waydroid"
+	do
+		if [ ! -e "$source_path" ] && [ ! -L "$source_path" ]
+		then
+			continue
+		fi
+		if [ "$source_path" = "$HOME/.local/share/waydroid" ]
+		then
+			archive_path=$ARCHIVED_ANDROID_USER_STATE
+		else
+			archive_path=$ARCHIVED_ANDROID_LEGACY_USER_STATE
+		fi
+		if ! sudo mv -- "$source_path" "$archive_path"
+		then
+			restore_archived_android_state_after_failure
+			return 1
+		fi
+	done
+	ANDROID_REINSTALL_ARCHIVE_READY=true
+
+	if [ -f "$ARCHIVED_ANDROID_IMAGE" ]
+	then
+		printf 'Previous Android image archived at: %s\n' "$ARCHIVED_ANDROID_IMAGE"
+	fi
+	if [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]
+	then
+		printf 'Previous Android user data archived at: %s\n' "$ARCHIVED_ANDROID_USER_STATE"
+	fi
+	if [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]
+	then
+		printf 'Previous legacy Android user data archived at: %s\n' "$ARCHIVED_ANDROID_LEGACY_USER_STATE"
+	fi
 }
 
-restore_archived_android_image_after_failure () {
-	if [ -n "${ARCHIVED_ANDROID_IMAGE:-}" ] && \
-		[ -f "$ARCHIVED_ANDROID_IMAGE" ] && [ ! -e "$WAYDROID_IMAGE" ]
+move_failed_android_state_aside () {
+	local source_path=$1 failed_path=$2
+
+	if [ ! -e "$source_path" ] && [ ! -L "$source_path" ]
 	then
-		printf 'Restoring the previous Android image after installation failure.\n'
-		mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || true
-		ARCHIVED_ANDROID_IMAGE=""
+		return 0
 	fi
+	if [ -e "$failed_path" ] || [ -L "$failed_path" ]
+	then
+		echo "Cannot move failed replacement state aside; destination exists: $failed_path" >&2
+		return 1
+	fi
+	sudo mv -- "$source_path" "$failed_path"
+	printf 'Incomplete replacement state retained at: %s\n' "$failed_path"
+}
+
+restore_archived_android_state_after_failure () {
+	local restore_failed=false image_path loop_device
+
+	[ -n "${ARCHIVED_ANDROID_IMAGE:-}" ] || return 0
+	[ "${ANDROID_REINSTALL_COMMITTED:-false}" != true ] || return 0
+
+	printf 'Restoring the complete previous Android state after installation failure.\n'
+	if [ "${ANDROID_REINSTALL_ARCHIVE_READY:-false}" != true ]
+	then
+		if [ -f "$ARCHIVED_ANDROID_IMAGE" ] && [ ! -e "$WAYDROID_IMAGE" ]
+		then
+			sudo mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || restore_failed=true
+		fi
+		if { [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]; } && \
+			[ ! -e "$HOME/.local/share/waydroid" ] && [ ! -L "$HOME/.local/share/waydroid" ]
+		then
+			sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$HOME/.local/share/waydroid" || restore_failed=true
+		fi
+		if { [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]; } && \
+			[ ! -e "$HOME/waydroid" ] && [ ! -L "$HOME/waydroid" ]
+		then
+			sudo mv -- "$ARCHIVED_ANDROID_LEGACY_USER_STATE" "$HOME/waydroid" || restore_failed=true
+		fi
+		[ "$restore_failed" = false ] || return 1
+		ARCHIVED_ANDROID_IMAGE=""
+		ARCHIVED_ANDROID_USER_STATE=""
+		ARCHIVED_ANDROID_LEGACY_USER_STATE=""
+		return 0
+	fi
+
+	sudo systemctl stop waydroid-container.service 2> /dev/null || true
+	if findmnt --mountpoint /var/lib/waydroid > /dev/null 2>&1
+	then
+		sudo umount /var/lib/waydroid || restore_failed=true
+	fi
+	if waydroid_mounts_are_active
+	then
+		echo Cannot restore previous Android state while Waydroid mounts remain active. >&2
+		return 1
+	fi
+	for image_path in "$WAYDROID_IMAGE" "${WORKING_DIR:-}/extras/waydroid.img"
+	do
+		[ -n "$image_path" ] && [ -f "$image_path" ] || continue
+		while IFS=: read -r loop_device _
+		do
+			if [[ "$loop_device" == /dev/loop* ]]
+			then
+				sudo losetup -d "$loop_device" || restore_failed=true
+			fi
+		done < <(sudo losetup -j "$image_path")
+	done
+
+	if ! move_failed_android_state_aside "$WAYDROID_IMAGE" "$FAILED_ANDROID_IMAGE"
+	then
+		restore_failed=true
+	fi
+	if ! move_failed_android_state_aside "$HOME/.local/share/waydroid" "$FAILED_ANDROID_USER_STATE"
+	then
+		restore_failed=true
+	fi
+	if ! move_failed_android_state_aside "$HOME/waydroid" "$FAILED_ANDROID_LEGACY_USER_STATE"
+	then
+		restore_failed=true
+	fi
+	if [ "$restore_failed" = true ]
+	then
+		echo Previous Android archives were left untouched because replacement state could not be moved safely. >&2
+		return 1
+	fi
+
+	mkdir -p -- "$ANDROID_HOME" "$HOME/.local/share"
+	if [ -f "$ARCHIVED_ANDROID_IMAGE" ]
+	then
+		sudo mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || restore_failed=true
+	fi
+	if [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]
+	then
+		sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$HOME/.local/share/waydroid" || restore_failed=true
+	fi
+	if [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]
+	then
+		sudo mv -- "$ARCHIVED_ANDROID_LEGACY_USER_STATE" "$HOME/waydroid" || restore_failed=true
+	fi
+	if [ "$restore_failed" = true ]
+	then
+		echo Automatic restoration was incomplete; inspect the timestamped archives before retrying. >&2
+		return 1
+	fi
+
+	ARCHIVED_ANDROID_IMAGE=""
+	ARCHIVED_ANDROID_USER_STATE=""
+	ARCHIVED_ANDROID_LEGACY_USER_STATE=""
+	printf 'Previous Android image and user data were restored.\n'
 }
 
 mount_waydroid_var () {
@@ -231,7 +414,7 @@ cleanup_exit () {
 	
 	# Re-enable Decky if this installer stopped it during preflight.
 	restore_decky_loader || true
-	restore_archived_android_image_after_failure
+	restore_archived_android_state_after_failure || true
 	
 	echo Cleanup completed. Please open an issue on the GitHub repo or leave a comment on the YT channel - 10MinuteSteamDeckGamer.
 	exit 1

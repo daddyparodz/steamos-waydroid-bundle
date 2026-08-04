@@ -7,12 +7,13 @@ REPAIR_MODE=false
 CONFIGURE_ARTIFACTS=false
 UNINSTALL_MODE=false
 FULL_UNINSTALL_MODE=false
+PURGE_ANDROID_MODE=false
 RESET_HOST_KEEP_ANDROID_MODE=false
 REINSTALL_ANDROID_MODE=false
 AUTO_REPAIR_MODE=false
 ANDROID_REINSTALL_HAS_EXISTING=false
 usage () {
-	echo "usage: $0 [--repair | --reinstall-android | --configure-artifacts | --uninstall | --uninstall-all | --reset-host-keep-android]" >&2
+	echo "usage: $0 [--repair | --reinstall-android | --configure-artifacts | --uninstall | --purge-android | --uninstall-all | --reset-host-keep-android]" >&2
 }
 if [ "$#" -gt 1 ]
 then
@@ -25,6 +26,7 @@ case "${1:-}" in
 	--reinstall-android) REINSTALL_ANDROID_MODE=true ;;
 	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
 	--uninstall) UNINSTALL_MODE=true ;;
+	--purge-android) PURGE_ANDROID_MODE=true ;;
 	--uninstall-all) FULL_UNINSTALL_MODE=true ;;
 	--reset-host-keep-android) RESET_HOST_KEEP_ANDROID_MODE=true ;;
 	*)
@@ -66,6 +68,8 @@ DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
 ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
 ANDROID_HOME=$HOME/Android_Waydroid
 WAYDROID_IMAGE=$ANDROID_HOME/waydroid.img
+WAYDROID_USER_STATE=$HOME/.local/share/waydroid
+WAYDROID_LEGACY_USER_STATE=$HOME/waydroid
 # shellcheck source=libexec/steamos-waydroid/installer-functions.sh
 source "$DECK_RUNTIME/installer-functions.sh"
 # shellcheck source=libexec/steamos-waydroid/installer-sanity-checks.sh
@@ -78,11 +82,17 @@ then
 elif [ "$RESET_HOST_KEEP_ANDROID_MODE" = true ]
 then
 	STEAMOS_WAYDROID_INTERNAL=1 \
-		"$DECK_RUNTIME/uninstall.sh" --keep-android
+		"$DECK_RUNTIME/uninstall.sh" --reset-host-keep-android
+	exit $?
+elif [ "$PURGE_ANDROID_MODE" = true ]
+then
+	STEAMOS_WAYDROID_INTERNAL=1 \
+		"$DECK_RUNTIME/uninstall.sh" --purge-android
 	exit $?
 elif [ "$UNINSTALL_MODE" = true ]
 then
-	STEAMOS_WAYDROID_INTERNAL=1 "$DECK_RUNTIME/uninstall.sh"
+	STEAMOS_WAYDROID_INTERNAL=1 \
+		"$DECK_RUNTIME/uninstall.sh" --keep-android
 	exit $?
 elif [ "$CONFIGURE_ARTIFACTS" = true ]
 then
@@ -103,6 +113,17 @@ then
 	AUTO_REPAIR_MODE=true
 fi
 
+if [ "$REPAIR_MODE" != true ] && [ "$REINSTALL_ANDROID_MODE" != true ] && \
+	[ ! -e "$WAYDROID_IMAGE" ] && [ ! -L "$WAYDROID_IMAGE" ] && \
+	{ [ -e "$WAYDROID_USER_STATE" ] || [ -L "$WAYDROID_USER_STATE" ] || \
+	  [ -e "$WAYDROID_LEGACY_USER_STATE" ] || [ -L "$WAYDROID_LEGACY_USER_STATE" ]; }
+then
+	echo Existing Android user data was found without its matching persistent image. >&2
+	echo Restore the image before running repair, or use --reinstall-android to archive >&2
+	echo the orphaned user data and deliberately create a new Android instance. >&2
+	exit 1
+fi
+
 if ! run_nonprivileged_sanity_checks
 then
 	exit 1
@@ -120,9 +141,12 @@ then
 		echo Existing Android state detected. Selecting safe host-repair mode by default.
 	fi
 elif [ "$REINSTALL_ANDROID_MODE" = true ] && \
-	{ [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; }
+	{ [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ] || \
+	  [ -e "$WAYDROID_USER_STATE" ] || [ -L "$WAYDROID_USER_STATE" ] || \
+	  [ -e "$WAYDROID_LEGACY_USER_STATE" ] || [ -L "$WAYDROID_LEGACY_USER_STATE" ]; }
 then
-	if [ ! -f "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]
+	if { [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; } && \
+		{ [ ! -f "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; }
 	then
 		echo "Android reinstallation refuses a non-regular image: $WAYDROID_IMAGE" >&2
 		exit 1
@@ -166,7 +190,7 @@ elif [ "$REINSTALL_ANDROID_MODE" = true ]
 then
 	if [ "$ANDROID_REINSTALL_HAS_EXISTING" = true ]
 	then
-		echo Mode: reinstall Android while retaining a recoverable copy of the previous image
+		echo Mode: reinstall Android while retaining recoverable copies of the previous image and user data
 	else
 		echo Mode: install Android; no previous persistent image was found
 	fi
@@ -230,6 +254,17 @@ abort_run () {
 		exit 1
 	fi
 	cleanup_exit
+}
+
+reinstall_exit_cleanup () {
+	exit_status=$?
+	trap - EXIT
+	if [ "${ANDROID_REINSTALL_COMMITTED:-false}" != true ]
+	then
+		restore_archived_android_state_after_failure || true
+	fi
+	restore_decky_loader || true
+	return "$exit_status"
 }
 
 prompt_return_to_gaming_mode () {
@@ -384,11 +419,13 @@ then
 		echo Repair stopped before changing SteamOS host integration. >&2
 		exit 1
 	fi
-elif [ "$REINSTALL_ANDROID_MODE" = true ] && [ -f "$WAYDROID_IMAGE" ]
+elif [ "$REINSTALL_ANDROID_MODE" = true ] && [ "$ANDROID_REINSTALL_HAS_EXISTING" = true ]
 then
-	if ! archive_existing_android_image
+	trap reinstall_exit_cleanup EXIT
+	trap 'exit 130' HUP INT TERM
+	if ! archive_existing_android_state
 	then
-		echo Android reinstallation stopped before changing the existing image. >&2
+		echo Android reinstallation stopped before replacing the existing Android state. >&2
 		exit 1
 	fi
 fi
@@ -686,10 +723,25 @@ fi
 	echo Unmounting the custom /var/lib/waydroid
 	echo -e "$current_password\n" | sudo systemctl stop waydroid-container.service
 	unmount_waydroid_var
-	mv extras/waydroid.img ~/Android_Waydroid/waydroid.img
-	if [ -n "${ARCHIVED_ANDROID_IMAGE:-}" ]
+	if ! mv extras/waydroid.img ~/Android_Waydroid/waydroid.img
+	then
+		echo Failed to activate the newly initialized Android image. >&2
+		abort_run
+	fi
+	ANDROID_REINSTALL_COMMITTED=true
+	if [ -n "${ARCHIVED_ANDROID_IMAGE:-}" ] && [ -f "$ARCHIVED_ANDROID_IMAGE" ]
 	then
 		printf 'The previous Android image remains archived at: %s\n' "$ARCHIVED_ANDROID_IMAGE"
+	fi
+	if [ -n "${ARCHIVED_ANDROID_USER_STATE:-}" ] && \
+		{ [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]; }
+	then
+		printf 'The previous Android user data remains archived at: %s\n' "$ARCHIVED_ANDROID_USER_STATE"
+	fi
+	if [ -n "${ARCHIVED_ANDROID_LEGACY_USER_STATE:-}" ] && \
+		{ [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]; }
+	then
+		printf 'The previous legacy Android user data remains archived at: %s\n' "$ARCHIVED_ANDROID_LEGACY_USER_STATE"
 	fi
 
 ensure_game_mode_shortcuts

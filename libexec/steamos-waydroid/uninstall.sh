@@ -7,19 +7,29 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 ANDROID_HOME="$HOME/Android_Waydroid"
 ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
+WAYDROID_USER_STATE="$HOME/.local/share/waydroid"
+WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
 SHORTCUT_MANAGER="$PROJECT_ROOT/extras/icon.py"
 READONLY_DISABLED=false
 FULL_PROCESS_RESET=false
-KEEP_ANDROID_IMAGE=false
-PRESERVED_IMAGE=""
+KEEP_ANDROID_STATE=false
+RESET_ARTIFACT_STATE=false
 PRESERVATION_ROOT=""
+PRESENT_ANDROID_USER_STATE=()
+ANDROID_STATE_FILES=()
+PRESERVED_ANDROID_FILES=()
 
 if [[ ${1:-} == --full-process ]]; then
     FULL_PROCESS_RESET=true
 elif [[ ${1:-} == --keep-android ]]; then
-    KEEP_ANDROID_IMAGE=true
+    KEEP_ANDROID_STATE=true
+elif [[ ${1:-} == --reset-host-keep-android ]]; then
+    KEEP_ANDROID_STATE=true
+    RESET_ARTIFACT_STATE=true
+elif [[ ${1:-} == --purge-android ]]; then
+    :
 elif [[ $# -ne 0 ]]; then
-    printf 'usage: %s [--full-process | --keep-android]\n' "$0" >&2
+    printf 'usage: %s [--full-process | --keep-android | --reset-host-keep-android | --purge-android]\n' "$0" >&2
     exit 1
 fi
 
@@ -35,26 +45,35 @@ restore_readonly() {
     fi
 }
 
-restore_android_image() {
-    [[ "$KEEP_ANDROID_IMAGE" == true ]] || return 0
-    [[ -n "$PRESERVED_IMAGE" && -e "$PRESERVED_IMAGE" ]] || return 0
+restore_android_files() {
+    local index preserved_file destination_file
 
-    if [[ -e "$ANDROID_IMAGE" ]]; then
-        printf 'error: refusing to overwrite Android image while restoring it: %s\n' \
-            "$ANDROID_IMAGE" >&2
-        printf 'Preserved Android image remains at: %s\n' "$PRESERVED_IMAGE" >&2
-        return 1
-    fi
+    [[ "$KEEP_ANDROID_STATE" == true ]] || return 0
+    (( ${#PRESERVED_ANDROID_FILES[@]} > 0 )) || return 0
 
+    for index in "${!PRESERVED_ANDROID_FILES[@]}"; do
+        preserved_file=${PRESERVED_ANDROID_FILES[$index]}
+        destination_file=${ANDROID_STATE_FILES[$index]}
+        if [[ -e "$destination_file" || -L "$destination_file" ]]; then
+            printf 'error: refusing to overwrite Android state while restoring it: %s\n' \
+                "$destination_file" >&2
+            printf 'Preserved Android state remains at: %s\n' "$preserved_file" >&2
+            return 1
+        fi
+    done
     mkdir -p -- "$ANDROID_HOME"
-    sudo mv -- "$PRESERVED_IMAGE" "$ANDROID_IMAGE"
+    for index in "${!PRESERVED_ANDROID_FILES[@]}"; do
+        preserved_file=${PRESERVED_ANDROID_FILES[$index]}
+        destination_file=${ANDROID_STATE_FILES[$index]}
+        sudo mv -- "$preserved_file" "$destination_file"
+    done
     rmdir -- "$PRESERVATION_ROOT" 2> /dev/null || true
-    PRESERVED_IMAGE=""
     PRESERVATION_ROOT=""
+    PRESERVED_ANDROID_FILES=()
 }
 
 cleanup() {
-    restore_android_image || true
+    restore_android_files || true
     restore_readonly
 }
 trap cleanup EXIT
@@ -75,29 +94,70 @@ if pgrep -x steam > /dev/null; then
     exit 1
 fi
 
-if [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
-    if [[ ! -f "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE" ]]; then
+if [[ "$KEEP_ANDROID_STATE" == true ]]; then
+    if [[ ( -e "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE" ) && \
+        ( ! -f "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE" ) ]]; then
         printf 'error: preservation requires a regular Android image: %s\n' \
             "$ANDROID_IMAGE" >&2
         exit 1
     fi
-    preservation_candidate="$HOME/.local/state/steamos-waydroid-preserved-reset"
-    if [[ -e "$preservation_candidate" ]]; then
-        printf 'error: preservation staging path already exists: %s\n' \
-            "$preservation_candidate" >&2
-        printf 'Inspect or recover it before retrying this reset.\n' >&2
-        exit 1
+    shopt -s nullglob
+    for android_state_file in \
+        "$ANDROID_IMAGE" \
+        "$ANDROID_HOME"/waydroid.img.pre-reinstall-* \
+        "$ANDROID_HOME"/waydroid.img.failed-reinstall-*
+    do
+        if [[ -L "$android_state_file" ]]; then
+            printf 'error: preservation refuses a symlinked Android state file: %s\n' \
+                "$android_state_file" >&2
+            exit 1
+        fi
+        if [[ -f "$android_state_file" ]]; then
+            ANDROID_STATE_FILES+=("$android_state_file")
+        fi
+    done
+    shopt -u nullglob
+    if (( ${#ANDROID_STATE_FILES[@]} > 0 )); then
+        preservation_candidate="$HOME/.local/state/steamos-waydroid-preserved-reset"
+        if [[ -e "$preservation_candidate" ]]; then
+            printf 'error: preservation staging path already exists: %s\n' \
+                "$preservation_candidate" >&2
+            printf 'Inspect or recover it before retrying this reset.\n' >&2
+            exit 1
+        fi
     fi
-    cat <<EOF
-This resets all installer-owned SteamOS host state while preserving:
-  - $ANDROID_IMAGE
+    for user_state_path in "$WAYDROID_USER_STATE" "$WAYDROID_LEGACY_USER_STATE"; do
+        if [[ -e "$user_state_path" || -L "$user_state_path" ]]; then
+            PRESENT_ANDROID_USER_STATE+=("$user_state_path")
+        fi
+    done
+    cat <<'EOF'
+This removes installed SteamOS host integration while preserving:
+EOF
+    if [[ -f "$ANDROID_IMAGE" ]]; then
+        printf '  - %s\n' "$ANDROID_IMAGE"
+    fi
+    printf '  - %s (Android applications, settings and logins)\n' \
+        "$WAYDROID_USER_STATE"
+    printf '  - %s when present (legacy Android user state)\n' \
+        "$WAYDROID_LEGACY_USER_STATE"
+    cat <<'EOF'
   - this Git checkout
 
 It removes Android launchers and per-user host integration, Waydroid packages,
-private Cage/wlroots bundles, artifact configuration, and system integration.
-The next normal installer run will exercise first-time host setup and reuse the
-preserved Android state, applications and logins.
+shortcuts, and installer-owned system integration. The next normal installer
+run reuses the preserved Android state, applications and logins.
 EOF
+    if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
+        cat <<'EOF'
+Clean host-reset mode also removes private Cage/wlroots bundles, artifact
+configuration, and compatibility reports so artifact setup is exercised again.
+EOF
+    else
+        cat <<'EOF'
+The verified target-built bundles and artifact configuration are retained.
+EOF
+    fi
 else
     cat <<'EOF'
 This permanently deletes this installer's Waydroid instance, including:
@@ -122,11 +182,13 @@ SSH keys and SSH host configuration are retained.
 EOF
 fi
 
-expected_confirmation="DELETE WAYDROID"
+expected_confirmation="DELETE ANDROID DATA"
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     expected_confirmation="DELETE EVERYTHING"
-elif [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+elif [[ "$RESET_ARTIFACT_STATE" == true ]]; then
     expected_confirmation="RESET HOST KEEP ANDROID"
+elif [[ "$KEEP_ANDROID_STATE" == true ]]; then
+    expected_confirmation="UNINSTALL HOST KEEP ANDROID"
 fi
 read -r -p "Type $expected_confirmation to continue: " confirmation
 if [[ "$confirmation" != "$expected_confirmation" ]]; then
@@ -149,18 +211,32 @@ if [[ -f "$ANDROID_IMAGE" ]]; then
     done < <(sudo losetup -j "$ANDROID_IMAGE")
 fi
 
-if [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
-    if findmnt --mountpoint /var/lib/waydroid > /dev/null 2>&1 || \
-        sudo losetup -j "$ANDROID_IMAGE" | grep -q .; then
-        printf 'error: Android image is still mounted or attached; preservation stopped\n' >&2
-        exit 1
-    fi
-    printf 'Moving the Android image aside during host cleanup...\n'
+# Waydroid normally bind-mounts the host-side Android data directory below
+# /var/lib/waydroid/data. Never let the later directory cleanup traverse that
+# data if container shutdown left a nested mount behind.
+if findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'; then
+    printf 'error: a Waydroid mount is still active below /var/lib/waydroid; reset stopped\n' >&2
+    findmnt -R /var/lib/waydroid >&2 || true
+    exit 1
+fi
+
+if [[ "$KEEP_ANDROID_STATE" == true && ${#ANDROID_STATE_FILES[@]} -gt 0 ]]; then
+    for android_state_file in "${ANDROID_STATE_FILES[@]}"; do
+        if sudo losetup -j "$android_state_file" | grep -q .; then
+            printf 'error: Android state is still attached; preservation stopped: %s\n' \
+                "$android_state_file" >&2
+            exit 1
+        fi
+    done
+    printf 'Moving Android image state aside during host cleanup...\n'
     PRESERVATION_ROOT="$HOME/.local/state/steamos-waydroid-preserved-reset"
     mkdir -p -- "$(dirname -- "$PRESERVATION_ROOT")"
     mkdir -m 0700 -- "$PRESERVATION_ROOT"
-    PRESERVED_IMAGE="$PRESERVATION_ROOT/waydroid.img"
-    sudo mv -- "$ANDROID_IMAGE" "$PRESERVED_IMAGE"
+    for android_state_file in "${ANDROID_STATE_FILES[@]}"; do
+        preserved_file="$PRESERVATION_ROOT/$(basename -- "$android_state_file")"
+        sudo mv -- "$android_state_file" "$preserved_file"
+        PRESERVED_ANDROID_FILES+=("$preserved_file")
+    done
 fi
 
 printf 'Removing Steam shortcuts and their local artwork...\n'
@@ -201,7 +277,11 @@ sudo rm -f -- \
     /usr/bin/waydroid-firewall
 sudo rm -rf -- /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra
 
-printf 'Removing Android data and per-user integration...\n'
+if [[ "$KEEP_ANDROID_STATE" == true ]]; then
+    printf 'Removing per-user host integration while retaining Android user data...\n'
+else
+    printf 'Removing Android data and per-user integration...\n'
+fi
 sudo rm -f -- \
     "$HOME/Desktop/Waydroid-Toolbox" \
     "$HOME/Desktop/Waydroid-Updater" \
@@ -211,9 +291,22 @@ sudo rm -f -- \
 # Waydroid and its privileged helpers can leave root-owned files below these
 # user directories. Keep the targets explicit, but remove them as root.
 sudo rm -rf -- \
-    "$ANDROID_HOME" \
-    "$HOME/waydroid" \
-    "$HOME/.local/share/waydroid"
+    "$ANDROID_HOME"
+if [[ "$KEEP_ANDROID_STATE" != true ]]; then
+    sudo rm -rf -- \
+        "$WAYDROID_LEGACY_USER_STATE" \
+        "$WAYDROID_USER_STATE"
+    if [[ -d "$HOME/.local/share" ]]; then
+        sudo find "$HOME/.local/share" -mindepth 1 -maxdepth 1 \
+            \( -name 'waydroid.pre-reinstall-*' -o \
+               -name 'waydroid.failed-reinstall-*' \) \
+            -exec rm -rf -- {} +
+    fi
+    sudo find "$HOME" -mindepth 1 -maxdepth 1 \
+        \( -name 'waydroid.pre-reinstall-*' -o \
+           -name 'waydroid.failed-reinstall-*' \) \
+        -exec rm -rf -- {} +
+fi
 
 applications="$HOME/.local/share/applications"
 if [[ -d "$applications" ]]; then
@@ -223,16 +316,26 @@ fi
 sudo steamos-readonly enable
 READONLY_DISABLED=false
 
-if [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+if [[ "$KEEP_ANDROID_STATE" == true ]]; then
     printf 'Restoring the preserved Android image...\n'
-    restore_android_image
+    restore_android_files
 
-    printf 'Removing target-built bundles and machine-local artifact state...\n'
-    sudo rm -rf -- \
-        "$HOME/.local/opt/steamos-waydroid" \
-        "$HOME/.local/share/steamos-waydroid-installer" \
-        "$HOME/.local/state/steamos-waydroid"
-    sudo rm -f -- "$PROJECT_ROOT/.deck-config.env"
+    for user_state_path in "${PRESENT_ANDROID_USER_STATE[@]}"; do
+        if [[ ! -e "$user_state_path" && ! -L "$user_state_path" ]]; then
+            printf 'error: preserved Android user state disappeared during reset: %s\n' \
+                "$user_state_path" >&2
+            exit 1
+        fi
+    done
+
+    if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
+        printf 'Removing target-built bundles and machine-local artifact state...\n'
+        sudo rm -rf -- \
+            "$HOME/.local/opt/steamos-waydroid" \
+            "$HOME/.local/share/steamos-waydroid-installer" \
+            "$HOME/.local/state/steamos-waydroid"
+        sudo rm -f -- "$PROJECT_ROOT/.deck-config.env"
+    fi
 fi
 
 trap - EXIT
@@ -267,9 +370,19 @@ EOF
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     printf 'Clone the Git repository again, then pull and install the published bundle.\n'
-elif [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
-    printf 'Android state was preserved at: %s\n' "$ANDROID_IMAGE"
-    printf 'Run the normal installer from this checkout to test first-time host setup.\n'
+elif [[ "$KEEP_ANDROID_STATE" == true ]]; then
+    if [[ -f "$ANDROID_IMAGE" ]]; then
+        printf 'Android image was preserved at: %s\n' "$ANDROID_IMAGE"
+    else
+        printf 'No Android image was present; existing host-side Android user data was retained.\n'
+    fi
+    printf 'Android applications, settings and logins were preserved at: %s\n' \
+        "$WAYDROID_USER_STATE"
+    if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
+        printf 'Configure artifacts, then run the normal installer to test first-time host setup.\n'
+    else
+        printf 'Run the normal installer from this checkout to restore host integration.\n'
+    fi
 else
-    printf 'The Git checkout and verified target-built bundles were retained.\n'
+    printf 'Android data was deleted. The Git checkout and verified target-built bundles were retained.\n'
 fi

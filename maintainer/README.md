@@ -301,8 +301,10 @@ or modifying Android data:
 
 `--repair` explicitly requests the same protected existing-image path. To
 deliberately create a new Android instance, use `--reinstall-android`; when an
-image exists it requires typed confirmation and archives the old image under a
-timestamped `waydroid.img.pre-reinstall-*` name before initialization.
+image or host-side Android data exists it requires typed confirmation and
+archives the image, `~/.local/share/waydroid`, and legacy `~/waydroid` state
+with a common timestamp before initialization. Failure moves incomplete new
+state aside and restores the previous state as a matched set.
 
 The installer and Game Mode launcher repeat the exact target check. After a
 SteamOS rollback, the installer automatically reactivates a compatible bundle
@@ -351,12 +353,14 @@ state, exit Steam completely and run:
 ./steamos-waydroid-installer.sh --reset-host-keep-android
 ```
 
-This keeps the Git checkout and `~/Android_Waydroid/waydroid.img`, but removes
-the private bundles, installed host packages, artifact configuration, reports,
-shortcuts and installer-owned system integration. The next normal installer
-run detects and reuses the preserved Android image after recreating the host
-environment. Make an independent backup of the image before relying on it as
-the only copy of valuable Android data.
+This keeps the Git checkout, `~/Android_Waydroid/waydroid.img`, Android
+applications, settings and logins under `~/.local/share/waydroid`, and legacy
+`~/waydroid` user state when present. It removes the private bundles, installed
+host packages, artifact configuration, reports, shortcuts and installer-owned
+system integration. The next normal installer run detects and reuses the
+preserved Android image and host-side Android data after recreating the host
+environment. Make an independent backup of both the image and user-data
+directory before relying on them as the only copy of valuable Android data.
 
 ## Full two-machine reset
 
@@ -377,3 +381,10 @@ Steam completely and run the public entry point:
 Full-process mode removes Waydroid, Android data, Steam shortcuts and artwork,
 the installed bundles, and the Deck Git checkout. It retains SSH keys and SSH host
 configuration so the repository can be cloned again.
+
+For public uninstall behavior, `--uninstall` removes host integration while
+preserving the complete Android state and installed artifacts. Use
+`--purge-android` to delete Android state while retaining the checkout and
+verified bundles; purge also removes timestamped reinstall archives.
+`--reset-host-keep-android` additionally removes bundles, artifact
+configuration, and reports while preserving Android state.

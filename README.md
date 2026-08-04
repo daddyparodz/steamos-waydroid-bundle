@@ -297,10 +297,13 @@ To deliberately create a new Android instance, use:
 ./steamos-waydroid-installer.sh --reinstall-android
 ```
 
-If an existing image is present, this requires typing `REINSTALL ANDROID` and
-renames the previous image to a timestamped `waydroid.img.pre-reinstall-*`
-archive before initialization. The new instance does not inherit applications
-or logins from that archive.
+If an existing image or host-side Android user-data directory is present, this
+requires typing `REINSTALL ANDROID`. It archives the image as
+`waydroid.img.pre-reinstall-*` and archives `~/.local/share/waydroid` and any
+legacy `~/waydroid` state with matching timestamps before initialization. The
+new instance does not inherit applications or logins. A failed installation
+moves incomplete replacement state aside and restores the complete previous
+state.
 
 On every normal or repair run, the installer creates a Waydroid or Nested
 Desktop Steam shortcut only when no matching shortcut exists. Existing
@@ -355,9 +358,23 @@ Exit Steam completely in Desktop Mode, open Konsole, and run:
 ./steamos-waydroid-installer.sh --uninstall
 ```
 
-This removes Waydroid and Android data but retains the checkout and verified
-bundles for reinstalling. To remove those prerequisites as well, use
-`--uninstall-all`. Both modes require an explicit typed confirmation.
+This removes Waydroid host packages, shortcuts and system integration while
+preserving the Android image, applications, settings, files and logins. It also
+retains the checkout, verified bundles and artifact configuration so a later
+normal run can restore host integration.
+
+To deliberately delete Android data while retaining the checkout and verified
+bundles, use:
+
+```sh
+./steamos-waydroid-installer.sh --purge-android
+```
+
+This also deletes timestamped Android image and user-data archives created by
+`--reinstall-android`.
+
+To delete Android data, bundles and the Deck-side checkout, use
+`--uninstall-all`. Destructive modes require explicit typed confirmation.
 
 To test first-time host installation while retaining Android applications,
 settings, files and login sessions, use:
@@ -366,12 +383,14 @@ settings, files and login sessions, use:
 ./steamos-waydroid-installer.sh --reset-host-keep-android
 ```
 
-This preserves only `~/Android_Waydroid/waydroid.img` and the Git checkout. It
-removes the installed Waydroid packages, Cage/wlroots bundles, artifact
-configuration, shortcuts, launchers and installer-owned system integration.
-The next normal installer run rebuilds the host-side setup around the preserved
-Android state. Back up the image separately before using any reset mode when it
-contains irreplaceable data.
+This preserves `~/Android_Waydroid/waydroid.img`, the Android applications,
+settings and logins under `~/.local/share/waydroid`, any legacy
+`~/waydroid` user state, and the Git checkout. It removes the installed
+Waydroid packages, Cage/wlroots bundles, artifact configuration, shortcuts,
+launchers and installer-owned system integration. The next normal installer
+run rebuilds the host-side setup around the preserved Android state. Back up
+both the image and user-data directory separately before using any reset mode
+when they contain irreplaceable data.
 
 # Troubleshooting / Filing Bug Reports
 1. If you encounter an issue with the script, try to [uninstall](#i-dont-want-this-anymore-i-want-to-uninstall), clone the repo again and perform an install.\

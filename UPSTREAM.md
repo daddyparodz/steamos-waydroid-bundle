@@ -31,10 +31,11 @@ This continuation is distributed under GNU GPL version 3. Original authors
 retain copyright in their contributions; later contributors retain copyright
 in theirs. See [LICENSE](LICENSE) for the complete licence terms.
 
-Historical documentation, videos, screenshots, acknowledgements, and donation
-links retained from the original project are upstream material unless clearly
-identified otherwise. Their presence does not imply current upstream support
-for this continuation.
+Historical promotional documentation, videos, screenshots, and donation links
+remain available in the inherited Git history but are not presented as part of
+this continuation. Contributor acknowledgements and technically relevant
+attribution are retained where appropriate; neither implies current upstream
+support for this project.
 
 ## Future upstream availability
 

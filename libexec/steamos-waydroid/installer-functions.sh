@@ -416,7 +416,7 @@ cleanup_exit () {
 	restore_decky_loader || true
 	restore_archived_android_state_after_failure || true
 	
-	echo Cleanup completed. Please open an issue on the GitHub repo or leave a comment on the YT channel - 10MinuteSteamDeckGamer.
+	echo Cleanup completed. Please open an issue at https://github.com/pjohno/steamos-waydroid-bundle/issues.
 	exit 1
 }
 

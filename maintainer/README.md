@@ -366,7 +366,7 @@ afterward.
 
 To exercise first-time Deck-side artifact selection, verification, package
 installation and host integration without losing Android applications or login
-state, exit Steam completely and run:
+state, run:
 
 ```bash
 ./steamos-waydroid-installer.sh --reset-host-keep-android
@@ -375,11 +375,13 @@ state, exit Steam completely and run:
 This keeps the Git checkout, `~/Android_Waydroid/waydroid.img`, Android
 applications, settings and logins under `~/.local/share/waydroid`, and legacy
 `~/waydroid` user state when present. It removes the installed bundles,
-host packages, artifact configuration, reports, shortcuts and installer-owned
-system integration. The next normal installer run detects and reuses the
-preserved Android image and host-side Android data after recreating the host
-environment. Make an independent backup of both the image and user-data
-directory before relying on them as the only copy of valuable Android data.
+host packages, artifact configuration, reports and installer-owned system
+integration. If Steam is running, its shortcut database is left untouched and
+any remaining entries must be removed manually in Gaming Mode. The next normal
+installer run detects and reuses the preserved Android image and host-side
+Android data after recreating the host environment. Make an independent backup
+of both the image and user-data directory before relying on them as the only
+copy of valuable Android data.
 
 ## Full two-machine reset
 
@@ -390,16 +392,17 @@ rootfs, sources, output and published artifacts:
 maintainer/reset-fedora-build.sh --include-config
 ```
 
-This retains the Fedora Git checkout and SSH configuration. On the Deck, exit
-Steam completely and run the public entry point:
+This retains the Fedora Git checkout and SSH configuration. On the Deck, run
+the public entry point:
 
 ```bash
 ./steamos-waydroid-installer.sh --uninstall-all
 ```
 
-Full-process mode removes Waydroid, Android data, Steam shortcuts and artwork,
-the installed bundles, and the Deck Git checkout. It retains SSH keys and SSH host
-configuration so the repository can be cloned again.
+Full-process mode removes Waydroid, Android data, the installed bundles, and
+the Deck Git checkout. It removes Steam shortcuts and artwork only when Steam
+is already closed; otherwise they remain for manual removal. SSH keys and SSH
+host configuration are retained so the repository can be cloned again.
 
 For public uninstall behavior, `--uninstall` removes host integration while
 preserving the complete Android state and installed artifacts. Use

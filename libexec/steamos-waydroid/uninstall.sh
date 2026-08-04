@@ -18,6 +18,7 @@ PRESERVATION_ROOT=""
 PRESENT_ANDROID_USER_STATE=()
 ANDROID_STATE_FILES=()
 PRESERVED_ANDROID_FILES=()
+MANUAL_SHORTCUT_REMOVAL=false
 
 if [[ ${1:-} == --full-process ]]; then
     FULL_PROCESS_RESET=true
@@ -88,12 +89,6 @@ if [[ ! -r /etc/os-release ]] || ! grep -q '^ID=steamos$' /etc/os-release; then
     exit 1
 fi
 
-if pgrep -x steam > /dev/null; then
-    printf 'error: exit Steam completely before running this reset script\n' >&2
-    printf 'Use Steam > Exit in Desktop Mode, then run it again from Konsole.\n' >&2
-    exit 1
-fi
-
 if [[ "$KEEP_ANDROID_STATE" == true ]]; then
     if [[ ( -e "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE" ) && \
         ( ! -f "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE" ) ]]; then
@@ -145,8 +140,9 @@ EOF
   - this Git checkout
 
 It removes Android launchers and per-user host integration, Waydroid packages,
-shortcuts, and installer-owned system integration. The next normal installer
-run reuses the preserved Android state, applications and logins.
+and installer-owned system integration. Steam shortcuts are removed when Steam
+is closed; otherwise they are left for safe manual removal. The next normal
+installer run reuses the preserved Android state, applications and logins.
 EOF
     if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
         cat <<'EOF'
@@ -163,7 +159,8 @@ else
 This permanently deletes this installer's Waydroid instance, including:
   - Android applications, settings and files
   - Waydroid packages and installer-owned system integration
-  - Waydroid and nested-desktop Steam shortcuts and local artwork
+  - Waydroid and nested-desktop Steam shortcuts and local artwork when Steam
+    is closed; otherwise remove them manually afterward
 
 By default it intentionally keeps:
   - this Git checkout
@@ -239,9 +236,26 @@ if [[ "$KEEP_ANDROID_STATE" == true && ${#ANDROID_STATE_FILES[@]} -gt 0 ]]; then
     done
 fi
 
-printf 'Removing Steam shortcuts and their local artwork...\n'
-python3 "$SHORTCUT_MANAGER" remove waydroid
-python3 "$SHORTCUT_MANAGER" remove nested-desktop
+if pgrep -x steam > /dev/null; then
+    MANUAL_SHORTCUT_REMOVAL=true
+    cat >&2 <<'EOF'
+WARNING: Steam is running, so its shortcuts database will not be modified.
+The Waydroid or Nested Desktop shortcut and artwork may remain after cleanup.
+Remove any remaining entry manually from Steam in Gaming Mode.
+EOF
+else
+    printf 'Removing Steam shortcuts and their local artwork...\n'
+    shortcut_cleanup_failed=false
+    python3 "$SHORTCUT_MANAGER" remove waydroid || shortcut_cleanup_failed=true
+    python3 "$SHORTCUT_MANAGER" remove nested-desktop || shortcut_cleanup_failed=true
+    if [[ "$shortcut_cleanup_failed" == true ]]; then
+        MANUAL_SHORTCUT_REMOVAL=true
+        cat >&2 <<'EOF'
+WARNING: Steam shortcut cleanup was incomplete, but uninstall will continue.
+Remove any remaining Waydroid or Nested Desktop entry manually from Steam.
+EOF
+    fi
+fi
 
 printf 'Removing the firewall rules added by the installer...\n'
 sudo systemctl start firewalld.service 2> /dev/null || true
@@ -365,8 +379,16 @@ cat <<'EOF'
 
 Reset complete.
 
-Start Steam again before running the installer locally from Desktop Mode.
+Run the installer locally from Desktop Mode when you are ready to reinstall.
 EOF
+
+if [[ "$MANUAL_SHORTCUT_REMOVAL" == true ]]; then
+    cat >&2 <<'EOF'
+
+Reminder: shortcut cleanup was skipped or incomplete. Remove any remaining
+Waydroid or Nested Desktop entry manually from Steam in Gaming Mode.
+EOF
+fi
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     printf 'Clone the Git repository again, then pull and install the published bundle.\n'

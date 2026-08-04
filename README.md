@@ -136,8 +136,10 @@ deployment, or follow the maintainer build procedure.
 | `./steamos-waydroid-installer.sh --reset-host-keep-android` | Remove host integration, bundles, artifact configuration, and reports while retaining Android state and the checkout. Useful for first-run testing. |
 | `./steamos-waydroid-installer.sh --uninstall-all` | Delete Android state, host integration, bundles, and the Deck-side checkout after typed confirmation. |
 
-Destructive modes explain their scope and require an exact typed phrase. Exit
-Steam completely before running uninstall or reset commands.
+Destructive modes explain their scope and require an exact typed phrase. The
+script never stops or restarts Steam. If Steam is running, uninstall and reset
+skip direct shortcut-database changes and continue; remove any remaining
+Waydroid or Nested Desktop shortcut manually from Steam in Gaming Mode.
 
 ## Reinstalling Android
 

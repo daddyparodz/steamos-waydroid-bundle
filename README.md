@@ -1,5 +1,13 @@
 # SteamOS Waydroid Bundle
 
+> [!IMPORTANT]
+> This is an independently maintained, modified continuation of Ryan Rudolf's
+> SteamOS Waydroid Installer. It is not affiliated with or endorsed by the
+> original project. Independent modifications began on 17 July 2026. The
+> original repository is currently unavailable to unauthenticated users; its
+> incorporated GPL-3.0 history and authorship are preserved here. See
+> [upstream provenance](UPSTREAM.md) for the exact source snapshot and status.
+
 A collection of tools that is packaged into an easy to use script that is streamlined and tested to work with the Steam Deck running on SteamOS.
 * The main program that does all the heavy lifting is [Waydroid - a container-based approach to boot a full Android system on a regular GNU/Linux system.](https://github.com/waydroid/waydroid)
 * Waydroid Toolbox to easily toggle some configuration settings for Waydroid.
@@ -9,9 +17,9 @@ This public edition installs only target-built bundles published for the exact
 SteamOS release and userspace ABI running on the Deck. It is based on
 [ryanrudolfoba's SteamOS Waydroid Installer](https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer).
 The original commit history and GPL-3.0 licence are retained. Historical
-videos, donation links, screenshots, and acknowledgements below belong to and
-support the upstream project and its contributors unless explicitly stated
-otherwise.
+videos, donation links, screenshots, and acknowledgements below are upstream
+material and support the original project and its contributors unless
+explicitly stated otherwise.
 
 Normal Deck users should run only `steamos-waydroid-installer.sh`. Internal
 runtime helpers live under `libexec/`; reproducible bundle-building tools live

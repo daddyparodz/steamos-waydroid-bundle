@@ -46,6 +46,130 @@ prompt_restore_decky_loader () {
 	esac
 }
 
+confirm_android_reinstall () {
+	local confirmation
+
+	cat <<EOF
+
+An existing Android installation was found:
+  $WAYDROID_IMAGE
+
+Android reinstallation creates a new Android instance. The current image will
+be renamed in the same directory instead of deleted, but its applications and
+logins will not appear in the new instance.
+EOF
+	IFS= read -r -p "Type REINSTALL ANDROID to continue: " confirmation
+	if [ "$confirmation" != "REINSTALL ANDROID" ]
+	then
+		echo Android reinstallation cancelled.
+		return 1
+	fi
+}
+
+detach_android_image () {
+	local image_path=$1 loop_device
+
+	sudo systemctl stop waydroid-container.service 2> /dev/null || true
+	if findmnt --mountpoint /var/lib/waydroid > /dev/null 2>&1
+	then
+		sudo umount /var/lib/waydroid
+	fi
+	while IFS=: read -r loop_device _
+	do
+		if [[ "$loop_device" == /dev/loop* ]]
+		then
+			sudo losetup -d "$loop_device"
+		fi
+	done < <(sudo losetup -j "$image_path")
+}
+
+validate_existing_android_image () {
+	local filesystem_type check_mount loop_device validation_failed
+
+	if [ ! -f "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]
+	then
+		echo "Existing Android image is not a regular file: $WAYDROID_IMAGE" >&2
+		return 1
+	fi
+
+	detach_android_image "$WAYDROID_IMAGE" || return 1
+	filesystem_type=$(sudo blkid -p -s TYPE -o value -- "$WAYDROID_IMAGE" 2> /dev/null || true)
+	if [ "$filesystem_type" != ext4 ]
+	then
+		echo "Existing Android image is not a recognisable ext4 filesystem: $WAYDROID_IMAGE" >&2
+		return 1
+	fi
+
+	check_mount=$(sudo mktemp -d /run/steamos-waydroid-image-check.XXXXXX) || return 1
+	loop_device=$(sudo losetup --find --show "$WAYDROID_IMAGE") || {
+		sudo rmdir "$check_mount" 2> /dev/null || true
+		return 1
+	}
+	if ! sudo mount -o ro,noload "$loop_device" "$check_mount"
+	then
+		sudo losetup -d "$loop_device" 2> /dev/null || true
+		sudo rmdir "$check_mount" 2> /dev/null || true
+		return 1
+	fi
+
+	validation_failed=false
+	for required_path in \
+		waydroid_base.prop \
+		waydroid.cfg \
+		lxc/waydroid/config \
+		rootfs
+	do
+		if ! sudo test -e "$check_mount/$required_path"
+		then
+			echo "Existing Android image is missing: $required_path" >&2
+			validation_failed=true
+		fi
+	done
+	if ! sudo test -s "$check_mount/waydroid_base.prop" || \
+		! sudo test -s "$check_mount/waydroid.cfg"
+	then
+		echo Existing Android image has empty Waydroid configuration files. >&2
+		validation_failed=true
+	fi
+
+	sudo umount "$check_mount" || validation_failed=true
+	sudo losetup -d "$loop_device" 2> /dev/null || validation_failed=true
+	sudo rmdir "$check_mount" 2> /dev/null || true
+
+	if [ "$validation_failed" = true ]
+	then
+		echo Existing Android state could not be validated and was not modified. >&2
+		return 1
+	fi
+	printf 'Existing Android image passed read-only structural validation.\n'
+}
+
+archive_existing_android_image () {
+	local timestamp
+
+	[ -f "$WAYDROID_IMAGE" ] || return 0
+	detach_android_image "$WAYDROID_IMAGE" || return 1
+	timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+	ARCHIVED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.pre-reinstall-$timestamp"
+	if [ -e "$ARCHIVED_ANDROID_IMAGE" ]
+	then
+		echo "Refusing to overwrite an existing Android archive: $ARCHIVED_ANDROID_IMAGE" >&2
+		return 1
+	fi
+	mv -- "$WAYDROID_IMAGE" "$ARCHIVED_ANDROID_IMAGE"
+	printf 'Previous Android image archived at: %s\n' "$ARCHIVED_ANDROID_IMAGE"
+}
+
+restore_archived_android_image_after_failure () {
+	if [ -n "${ARCHIVED_ANDROID_IMAGE:-}" ] && \
+		[ -f "$ARCHIVED_ANDROID_IMAGE" ] && [ ! -e "$WAYDROID_IMAGE" ]
+	then
+		printf 'Restoring the previous Android image after installation failure.\n'
+		mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || true
+		ARCHIVED_ANDROID_IMAGE=""
+	fi
+}
+
 mount_waydroid_var () {
 	# this will initialize and configure custom /var/lib/waydroid
 	# first make sure /var/lib/waydroid is not mounted
@@ -107,6 +231,7 @@ cleanup_exit () {
 	
 	# Re-enable Decky if this installer stopped it during preflight.
 	restore_decky_loader || true
+	restore_archived_android_image_after_failure
 	
 	echo Cleanup completed. Please open an issue on the GitHub repo or leave a comment on the YT channel - 10MinuteSteamDeckGamer.
 	exit 1

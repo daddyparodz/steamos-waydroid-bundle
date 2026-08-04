@@ -290,12 +290,19 @@ cd ~/steamos-waydroid-personal
 ./steamos-waydroid-installer.sh
 ```
 
-After an atomic SteamOS update, repair reinstalls the target-built host package
-set from the matching bundle without recreating or modifying Android data:
+After an atomic SteamOS update, the normal command detects the persistent image,
+validates it read-only, and automatically reinstalls the target-built host
+package set plus user-side launchers from the matching bundle without recreating
+or modifying Android data:
 
 ```bash
-./steamos-waydroid-installer.sh --repair
+./steamos-waydroid-installer.sh
 ```
+
+`--repair` explicitly requests the same protected existing-image path. To
+deliberately create a new Android instance, use `--reinstall-android`; when an
+image exists it requires typed confirmation and archives the old image under a
+timestamped `waydroid.img.pre-reinstall-*` name before initialization.
 
 The installer and Game Mode launcher repeat the exact target check. After a
 SteamOS rollback, the installer automatically reactivates a compatible bundle

@@ -286,6 +286,22 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 4. Script will automatically install Waydroid together with the custom config. Install will roughly take around 5mins depending on the internet connection speed.
 5. Once done exit the script and go back to Game Mode.
 
+On later runs, the default command detects `~/Android_Waydroid/waydroid.img`,
+validates it through a read-only ext4 mount, and automatically repairs the host
+packages, launchers and integration without initializing or modifying Android.
+`--repair` remains available as an explicit form of the same protected path.
+
+To deliberately create a new Android instance, use:
+
+```sh
+./steamos-waydroid-installer.sh --reinstall-android
+```
+
+If an existing image is present, this requires typing `REINSTALL ANDROID` and
+renames the previous image to a timestamped `waydroid.img.pre-reinstall-*`
+archive before initialization. The new instance does not inherit applications
+or logins from that archive.
+
 On every normal or repair run, the installer creates a Waydroid or Nested
 Desktop Steam shortcut only when no matching shortcut exists. Existing
 shortcuts and their artwork are never changed or deleted. To replace one,
@@ -373,12 +389,19 @@ Answer - This issue happens if Steam client cant be run because the script was c
 
 # A Note on SteamOS Updates
 When there is a SteamOS update the waydroid will be wiped. This is normal behavior due to how SteamOS applies updates. \
-If the private Android image and launcher still exist, restore the erased host integration without reinitializing Android:
+If the private Android image still exists, run the installer normally. It
+automatically selects protected repair mode and restores erased host integration
+without reinitializing Android:
 ```sh
 cd ~/steamos-waydroid-personal
-./steamos-waydroid-installer.sh --repair
+./steamos-waydroid-installer.sh
 ```
-Repair requires a published bundle containing target-built host packages compatible with the updated SteamOS build. It exits without initializing Android when those prerequisites or the persistent image are missing. Please file an issue with the compatibility report if no matching bundle is available.
+The explicit `--repair` option has the same effect but fails when no persistent
+image exists. Repair requires a published bundle containing target-built host
+packages compatible with the updated SteamOS build. It exits without
+initializing Android when those prerequisites are missing or image validation
+fails. Please file an issue with the compatibility report if no matching bundle
+is available.
 
 
 # Mini-guides for Steam Deck Android Waydroid

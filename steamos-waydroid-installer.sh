@@ -8,8 +8,11 @@ CONFIGURE_ARTIFACTS=false
 UNINSTALL_MODE=false
 FULL_UNINSTALL_MODE=false
 RESET_HOST_KEEP_ANDROID_MODE=false
+REINSTALL_ANDROID_MODE=false
+AUTO_REPAIR_MODE=false
+ANDROID_REINSTALL_HAS_EXISTING=false
 usage () {
-	echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all | --reset-host-keep-android]" >&2
+	echo "usage: $0 [--repair | --reinstall-android | --configure-artifacts | --uninstall | --uninstall-all | --reset-host-keep-android]" >&2
 }
 if [ "$#" -gt 1 ]
 then
@@ -19,6 +22,7 @@ fi
 case "${1:-}" in
 	"") ;;
 	--repair) REPAIR_MODE=true ;;
+	--reinstall-android) REINSTALL_ANDROID_MODE=true ;;
 	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
 	--uninstall) UNINSTALL_MODE=true ;;
 	--uninstall-all) FULL_UNINSTALL_MODE=true ;;
@@ -60,6 +64,8 @@ WORKING_DIR=$SCRIPT_DIR
 DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
 DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
 ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
+ANDROID_HOME=$HOME/Android_Waydroid
+WAYDROID_IMAGE=$ANDROID_HOME/waydroid.img
 # shellcheck source=libexec/steamos-waydroid/installer-functions.sh
 source "$DECK_RUNTIME/installer-functions.sh"
 # shellcheck source=libexec/steamos-waydroid/installer-sanity-checks.sh
@@ -88,9 +94,44 @@ then
 	exit 0
 fi
 
+# A persistent Android image is authoritative installation state. A normal run
+# repairs the host around it; Android replacement requires an explicit option.
+if [ "$REPAIR_MODE" != true ] && [ "$REINSTALL_ANDROID_MODE" != true ] && \
+	{ [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; }
+then
+	REPAIR_MODE=true
+	AUTO_REPAIR_MODE=true
+fi
+
 if ! run_nonprivileged_sanity_checks
 then
 	exit 1
+fi
+
+if [ "$REPAIR_MODE" = true ]
+then
+	if [ ! -f "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]
+	then
+		echo "Existing-install repair requires a regular Android image: $WAYDROID_IMAGE" >&2
+		exit 1
+	fi
+	if [ "$AUTO_REPAIR_MODE" = true ]
+	then
+		echo Existing Android state detected. Selecting safe host-repair mode by default.
+	fi
+elif [ "$REINSTALL_ANDROID_MODE" = true ] && \
+	{ [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; }
+then
+	if [ ! -f "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]
+	then
+		echo "Android reinstallation refuses a non-regular image: $WAYDROID_IMAGE" >&2
+		exit 1
+	fi
+	if ! confirm_android_reinstall
+	then
+		exit 1
+	fi
+	ANDROID_REINSTALL_HAS_EXISTING=true
 fi
 
 if [ ! -f "$DECK_CONFIG_FILE" ]
@@ -113,7 +154,6 @@ PRIVATE_TARGET_CHECK=$PRIVATE_BUNDLE/tools/check-bundle-target.sh
 PRIVATE_COMPATIBILITY_REPORT=$PRIVATE_BUNDLE/tools/compatibility-report.sh
 PRIVATE_TARGET_ALLOW=$HOME/.local/opt/steamos-waydroid/allow-target-mismatch
 HOST_PACKAGE_ROOT=$PRIVATE_BUNDLE/packages
-WAYDROID_IMAGE=$HOME/Android_Waydroid/waydroid.img
 
 # android TV builds
 ANDROID13_TV_OTA=https://ota.supechicken666.dev
@@ -122,19 +162,13 @@ echo script version: $SCRIPT_VERSION_SHA
 if [ "$REPAIR_MODE" = true ]
 then
 	echo Mode: repair existing installation
-	if [ ! -f "$WAYDROID_IMAGE" ]
+elif [ "$REINSTALL_ANDROID_MODE" = true ]
+then
+	if [ "$ANDROID_REINSTALL_HAS_EXISTING" = true ]
 	then
-		echo "Repair requires an existing Android image: $WAYDROID_IMAGE" >&2
-		echo Run the installer without --repair for a new installation. >&2
-		exit 1
-	fi
-	if [ ! -r "$HOME/Android_Waydroid/Android_Waydroid_Cage.sh" ] || \
-		[ ! -r "$HOME/Android_Waydroid/config/fake_wifi" ] || \
-		[ ! -r "$HOME/Android_Waydroid/config/fake_touch" ]
-	then
-		echo The persistent Waydroid launcher or configuration is missing. >&2
-		echo Repair stopped without changing Android data. >&2
-		exit 1
+		echo Mode: reinstall Android while retaining a recoverable copy of the previous image
+	else
+		echo Mode: install Android; no previous persistent image was found
 	fi
 fi
 
@@ -345,6 +379,18 @@ then
 	# packages and root-owned integration are restored.
 	echo -e "$current_password\n" | sudo -S systemctl stop waydroid-container.service &> /dev/null || true
 	unmount_waydroid_var "$WAYDROID_IMAGE"
+	if ! validate_existing_android_image
+	then
+		echo Repair stopped before changing SteamOS host integration. >&2
+		exit 1
+	fi
+elif [ "$REINSTALL_ANDROID_MODE" = true ] && [ -f "$WAYDROID_IMAGE" ]
+then
+	if ! archive_existing_android_image
+	then
+		echo Android reinstallation stopped before changing the existing image. >&2
+		exit 1
+	fi
 fi
 
 # Android modification tooling is needed only for a new installation.
@@ -422,11 +468,9 @@ then
 	echo -e "$current_password\n" | sudo -S systemctl stop firewalld
 fi
 
-# lets install the custom config files
-if [ "$REPAIR_MODE" != true ]
-then
-	mkdir -p ~/Android_Waydroid/config &> /dev/null
-fi
+# Recreate user-side host integration in both fresh-install and repair modes.
+# These files live outside the Android image and are safe to refresh.
+mkdir -p ~/Android_Waydroid/config &> /dev/null
 
 # waydroid startup and shutdown scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-startup-scripts /usr/bin/waydroid-startup-scripts
@@ -441,73 +485,53 @@ echo -e "$current_password\n" | sudo -S install -o root -g root -m 0440 \
 	extras/zzzzzzzz-waydroid /etc/sudoers.d/zzzzzzzz-waydroid
 echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 
-if [ "$REPAIR_MODE" != true ]
-then
-	# copy waydroid launcher dependencies
-	cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
-		extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
-	cp extras/config/fake_wifi extras/config/fake_touch ~/Android_Waydroid/config
-	cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
-	mkdir -p ~/Android_Waydroid/icons
-	cp -a extras/icons/. ~/Android_Waydroid/icons/
-
-	# waydroid launcher, toolbox and updater
-	chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
-
-	# Dolphin File Manager extension for root access
-	mkdir -p ~/.local/share/kio/servicemenus
-	cp extras/open_as_root.desktop ~/.local/share/kio/servicemenus
-	chmod +x ~/.local/share/kio/servicemenus/open_as_root.desktop
-
-	# desktop shortcuts for toolbox + updater
-	ln -s ~/Android_Waydroid/Waydroid-Toolbox.sh ~/Desktop/Waydroid-Toolbox &> /dev/null
-	ln -s ~/Android_Waydroid/Waydroid-Updater.sh ~/Desktop/Waydroid-Updater &> /dev/null
-fi
-
-
-# lets check if this is a reinstall
-echo Checking if this is a reinstall - step1.
-if [ -d /var/lib/waydroid ]
-then
-	echo /var/lib/waydroid exists! 
-else
-	sudo -S mkdir /var/lib/waydroid
-fi
-
-echo Checking if this is a reinstall - step2.
-if [ -f $HOME/Android_Waydroid/waydroid.img ]
-then
-	echo Most probably this is a reinstall!
-	echo Mounting waydroid.img to /var/lib/waydroid
-	ROOTDEV=$(sudo losetup --find --show "$WAYDROID_IMAGE")
-	if [ "$REPAIR_MODE" = true ]
+# Copy Waydroid launcher dependencies.
+cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
+	extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
+for config_file in fake_wifi fake_touch
+do
+	if [ "$REPAIR_MODE" != true ] || [ ! -e "$HOME/Android_Waydroid/config/$config_file" ]
 	then
-		# Repair only validates persistent state; do not replay the ext4 journal or
-		# write to Android data while restoring the SteamOS host integration.
-		sudo mount -o ro,noload "$ROOTDEV" /var/lib/waydroid
-	else
-		sudo mount "$ROOTDEV" /var/lib/waydroid
+		cp "extras/config/$config_file" ~/Android_Waydroid/config
 	fi
+done
+cp extras/icon.py ~/Android_Waydroid/steam-shortcuts.py
+mkdir -p ~/Android_Waydroid/icons
+cp -a extras/icons/. ~/Android_Waydroid/icons/
 
-	if [ $? -eq 0 ]
+# Waydroid launcher, toolbox and updater.
+chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
+
+# Dolphin File Manager extension for root access.
+mkdir -p ~/.local/share/kio/servicemenus
+cp extras/open_as_root.desktop ~/.local/share/kio/servicemenus
+chmod +x ~/.local/share/kio/servicemenus/open_as_root.desktop
+
+# Desktop shortcuts for toolbox + updater.
+ln -sfn ~/Android_Waydroid/Waydroid-Toolbox.sh ~/Desktop/Waydroid-Toolbox &> /dev/null
+ln -sfn ~/Android_Waydroid/Waydroid-Updater.sh ~/Desktop/Waydroid-Updater &> /dev/null
+
+
+sudo mkdir -p /var/lib/waydroid
+if [ "$REPAIR_MODE" = true ]
+then
+	echo Mounting the validated Android image read-only for repair verification.
+	ROOTDEV=$(sudo losetup --find --show "$WAYDROID_IMAGE")
+	if ! sudo mount -o ro,noload "$ROOTDEV" /var/lib/waydroid
 	then
-		echo waydroid.img successfully mounted to /var/lib/waydroid
-	else
-		echo Error mounting waydroid.img
-		echo Exiting immediately.
+		echo Error mounting the existing Android image. >&2
 		abort_run
 	fi
-
 else
-	echo waydroid.img not found!
-	echo Preparing to mount waydroid.img
-	mount_waydroid_var
-
-	if [ $? -eq 0 ]
+	if [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]
 	then
-		echo Custom /var/lib/waydroid has been created and mounted!
-	else
-		echo Error creating /var/lib/waydroid. Exiting immediately.
+		echo Refusing to initialize Android while an unhandled image exists: "$WAYDROID_IMAGE" >&2
+		abort_run
+	fi
+	echo Preparing a new persistent Android image.
+	if ! mount_waydroid_var
+	then
+		echo Error creating the new Android image. >&2
 		abort_run
 	fi
 fi
@@ -579,21 +603,6 @@ then
 	exit 0
 fi
 
-echo Checking if this is a reinstall - step3.
-grep blazer /var/lib/waydroid/waydroid_base.prop &> /dev/null || grep PH7M_EU_5596 /var/lib/waydroid/waydroid_base.prop &> /dev/null
-if [ $? -eq 0 ]
-then
-	echo This seems to be a reinstall. Lets just make sure the symlinks are in place!
-	if [ ! -d /etc/waydroid-extra ]
-	then
-		echo -e "$current_password\n" | sudo -S mkdir /etc/waydroid-extra
-		echo -e "$current_password\n" | sudo -S ln -s /var/lib/waydroid/custom /etc/waydroid-extra/images &> /dev/null
-	fi
-
-	# all done lets re-enable the readonly
-	echo -e "$current_password\n" | sudo -S steamos-readonly enable
-	echo Waydroid has been successfully installed!
-else
 	echo Downloading waydroid image from sourceforge.
 	echo This can take a few seconds to a few minutes depending on the internet connection and the speed of the sourceforge mirror.
 	echo Sometimes it connects to a slow sourceforge mirror and the downloads are slow -. This is beyond my control!
@@ -678,7 +687,10 @@ else
 	echo -e "$current_password\n" | sudo systemctl stop waydroid-container.service
 	unmount_waydroid_var
 	mv extras/waydroid.img ~/Android_Waydroid/waydroid.img
-fi
+	if [ -n "${ARCHIVED_ANDROID_IMAGE:-}" ]
+	then
+		printf 'The previous Android image remains archived at: %s\n' "$ARCHIVED_ANDROID_IMAGE"
+	fi
 
 ensure_game_mode_shortcuts
 

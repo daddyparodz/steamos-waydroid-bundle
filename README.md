@@ -7,6 +7,16 @@
 > [upstream provenance](UPSTREAM.md) for the incorporated source snapshot,
 > authorship, licence history, and current upstream status.
 
+> [!NOTE]
+> **AI assistance disclosure:** This continuation was substantially refactored
+> during July and August 2026 with OpenAI Codex, an AI coding agent based on
+> the GPT-5 model family. Codex assisted with architecture, shell-script
+> refactoring, safety checks, documentation, and code review under the human
+> maintainer's direction. The exact internal model build or revision identifier
+> is not exposed to this repository or session, so no more specific version is
+> claimed. The human maintainer selected, tested, and published the changes and
+> remains responsible for the resulting software.
+
 SteamOS Waydroid Bundle installs Waydroid on a Steam Deck using host packages,
 Cage, wlroots, and wlr-randr built against the Deck's exact SteamOS userspace.
 It keeps the persistent Android image under the `deck` user's home so routine

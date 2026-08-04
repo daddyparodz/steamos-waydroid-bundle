@@ -37,8 +37,8 @@ fi
 
 printf 'Entering the copied SteamOS rootfs.\n'
 printf 'First prepare with: /repo/maintainer/prepare-build-rootfs.sh\n'
-printf 'Then build the private compositor and host packages with:\n'
-printf '  /repo/maintainer/build-private-bundle.sh\n\n'
+printf 'Then build the bundled compositor and host packages with:\n'
+printf '  /repo/maintainer/build-bundle.sh\n\n'
 
 sudo systemd-nspawn \
     --directory="$ROOTFS_ROOT" \

@@ -39,7 +39,7 @@ required_system_headers=(
     stdio.h stdint.h features.h sys/eventfd.h linux/dma-buf.h glib-2.0/glib.h
 )
 
-printf 'Preparing the copied SteamOS rootfs for the private build.\n'
+printf 'Preparing the copied SteamOS rootfs for the bundle build.\n'
 printf 'The live Steam Deck is not modified by this script.\n\n'
 
 if [[ ! -s /etc/ssl/certs/ca-certificates.crt ]]; then
@@ -111,7 +111,7 @@ if ! python -c 'import Cython, setuptools' 2> /dev/null; then
 fi
 
 [[ "$verification_failed" == false ]] || \
-    die "copied rootfs preparation is incomplete; do not start the private build"
+    die "copied rootfs preparation is incomplete; do not start the bundle build"
 
 printf '\nConfirming preparation did not change the captured target ABI...\n'
 prepared_fingerprint="$(mktemp)"
@@ -126,4 +126,4 @@ prepared_target="$(fingerprint_value "$prepared_fingerprint" TARGET_ENVIRONMENT_
     die "build tools changed the target ABI; discard this rootfs and investigate the pacman transaction"
 
 printf '\nRootfs preparation passed. Build with:\n'
-printf '  /repo/maintainer/build-private-bundle.sh\n'
+printf '  /repo/maintainer/build-bundle.sh\n'

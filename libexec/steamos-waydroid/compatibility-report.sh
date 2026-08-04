@@ -8,7 +8,7 @@ if [[ -r "$SCRIPT_DIR/lib/target-fingerprint.sh" ]]; then
     # shellcheck source=lib/target-fingerprint.sh
     source "$SCRIPT_DIR/lib/target-fingerprint.sh"
 elif [[ -r "$SCRIPT_DIR/target-fingerprint.sh" ]]; then
-    # Installed private bundle layout.
+    # Installed bundle layout.
     # shellcheck source=lib/target-fingerprint.sh
     source "$SCRIPT_DIR/target-fingerprint.sh"
 else
@@ -88,8 +88,8 @@ current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
     printf '\n## Suggested commands\n\n```bash\n'
     printf 'maintainer/sync-steamos-rootfs.sh\n'
     printf 'maintainer/enter-build-rootfs.sh\n'
-    printf '# inside the rootfs: /repo/maintainer/build-private-bundle.sh\n'
-    printf 'maintainer/publish-private-bundle.sh\n'
+    printf '# inside the rootfs: /repo/maintainer/build-bundle.sh\n'
+    printf 'maintainer/publish-bundle.sh\n'
     printf '# on the Deck: ./steamos-waydroid-installer.sh --repair\n'
     printf '```\n'
 } > "$OUTPUT_FILE"

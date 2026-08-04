@@ -11,7 +11,7 @@ fi
 
 while true
 do
-Choice=$(zenity --width 850 --height 400 --list --radiolist --multiple --title "Waydroid Toolbox for SteamOS Waydroid script  - https://github.com/ryanrudolfoba/steamos-waydroid-installer"\
+Choice=$(zenity --width 850 --height 400 --list --radiolist --multiple --title "Waydroid Toolbox  - https://github.com/pjohno/steamos-waydroid-bundle"\
 	--column "Select One" \
 	--column "Option" \
 	--column="Description - Read this carefully!"\

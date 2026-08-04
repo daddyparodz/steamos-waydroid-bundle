@@ -95,25 +95,25 @@ mapfile -t wlroots_libraries < <(
     find "$BUNDLE_ROOT/lib" -maxdepth 1 \
         \( -type f -o -type l \) -name 'libwlroots-0.18.so*' -print
 )
-(( ${#wlroots_libraries[@]} > 0 )) || die "private wlroots is missing"
+(( ${#wlroots_libraries[@]} > 0 )) || die "bundled wlroots is missing"
 
 file "$BUNDLE_ROOT/bin/cage" | grep -F 'x86-64' >/dev/null || \
     die "Cage is not an x86-64 executable"
 
 readelf -d "$BUNDLE_ROOT/bin/cage" | \
     grep -F '$ORIGIN/../lib' >/dev/null || \
-    die "Cage does not have the private relative RUNPATH"
+    die "Cage does not have the bundle-relative RUNPATH"
 
-private_wlroots="${wlroots_libraries[0]}"
-readelf -d "$private_wlroots" | grep -F 'libdisplay-info.so.3' >/dev/null || \
-    die "private wlroots does not require libdisplay-info.so.3"
+bundled_wlroots="${wlroots_libraries[0]}"
+readelf -d "$bundled_wlroots" | grep -F 'libdisplay-info.so.3' >/dev/null || \
+    die "bundled wlroots does not require libdisplay-info.so.3"
 
 for forbidden_dependency in \
     libdisplay-info.so.2 \
     libliftoff.so \
     libvulkan.so; do
-    if readelf -d "$private_wlroots" | grep -F "$forbidden_dependency" >/dev/null; then
-        die "private wlroots has unwanted dependency: $forbidden_dependency"
+    if readelf -d "$bundled_wlroots" | grep -F "$forbidden_dependency" >/dev/null; then
+        die "bundled wlroots has unwanted dependency: $forbidden_dependency"
     fi
 done
 
@@ -129,7 +129,7 @@ resolved_wlroots="$(realpath -e -- "$resolved_wlroots")"
 bundle_library_root="$(realpath -e -- "$BUNDLE_ROOT/lib")"
 case "$resolved_wlroots" in
     "$bundle_library_root"/*) ;;
-    *) die "Cage did not resolve wlroots from its private bundle" ;;
+    *) die "Cage did not resolve wlroots from its bundle" ;;
 esac
 
 if find "$BUNDLE_ROOT" -type f \

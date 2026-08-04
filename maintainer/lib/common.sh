@@ -16,7 +16,7 @@ if [[ -f "$BUILD_CONFIG_FILE" ]]; then
     source "$BUILD_CONFIG_FILE"
 fi
 
-BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-$HOME/steamos-waydroid-personal}"
+BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-$HOME/steamos-waydroid-build/public}"
 BUNDLE_VERSION="${CALLER_BUNDLE_VERSION:-${BUNDLE_VERSION:-auto}}"
 BUNDLE_REVISION="${BUNDLE_REVISION:-r2}"
 WLROOTS_VERSION="${WLROOTS_VERSION:-0.18.2}"
@@ -62,7 +62,7 @@ write_build_failure_report() {
     report_file="$REPORT_ROOT/${BUNDLE_VERSION:-unknown}-$timestamp-build-failure.md"
     source_tree="${SOURCE_ROOT:-/work/src}"
     {
-        printf '# Private bundle build failure\n\n'
+        printf '# Bundle build failure\n\n'
         printf -- '- Generated (UTC): `%s`\n' "$timestamp"
         printf -- '- Bundle: `%s`\n' "${BUNDLE_VERSION:-unknown}"
         printf -- '- Stage: `%s`\n' "$BUILD_REPORT_STAGE"

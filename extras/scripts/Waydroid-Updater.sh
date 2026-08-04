@@ -2,8 +2,8 @@
 
 set -e
 
-checkout="$HOME/steamos-waydroid-personal"
-repository="https://github.com/pjohno/steamos-waydroid-personal.git"
+checkout="$HOME/steamos-waydroid-bundle"
+repository="https://github.com/pjohno/steamos-waydroid-bundle.git"
 
 echo "Updating the SteamOS Waydroid Installer from its public repository."
 sleep 2

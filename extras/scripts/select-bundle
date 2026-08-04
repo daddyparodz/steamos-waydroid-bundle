@@ -28,12 +28,12 @@ activate_bundle() {
 		ln -sfn "builds/$bundle_version" current
 	)
 	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
-	printf 'Activated private bundle for this SteamOS target: %s\n' "$bundle_version"
+	printf 'Activated bundle for this SteamOS target: %s\n' "$bundle_version"
 }
 
 if bundle_matches_current_target "$CURRENT_LINK"; then
 	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
-	printf 'Current private bundle matches this SteamOS target: %s\n' \
+	printf 'Current bundle matches this SteamOS target: %s\n' \
 		"$(basename -- "$(readlink -f "$CURRENT_LINK")")"
 	exit 0
 fi
@@ -45,5 +45,5 @@ while IFS= read -r candidate; do
 	fi
 done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
 
-printf 'error: no installed private bundle matches the running SteamOS target\n' >&2
+printf 'error: no installed bundle matches the running SteamOS target\n' >&2
 exit 1

@@ -8,6 +8,25 @@ are installed into the SteamOS deployment by the installer or repair mode.
 The repository contains recipes and immutable source checksums, not prebuilt
 pacman archives.
 
+## Repository and workspace layout
+
+The public source of record is `pjohno/steamos-waydroid-bundle`. Build and
+publish public artifacts only from a committed revision present in that
+repository. Private experiments may use a separate clone and repository, but
+promote reviewed commits into the public checkout before rebuilding; do not
+publish a copied source directory or an artifact built from an unpublished
+revision.
+
+Keep source and generated state separate:
+
+- public checkout: `~/steamos-waydroid-bundle`;
+- public Fedora build state: `~/steamos-waydroid-build/public`;
+- optional private build state: `~/steamos-waydroid-build/private`.
+
+Machine-specific addresses, SSH aliases, repository overrides, and release
+tags belong only in the ignored `.build-config.env` or `.deck-config.env`
+files. Never add either file to Git.
+
 The current validated host baseline is SteamOS 3.8.16 Stable on x86-64 with:
 
 - glibc 2.41;
@@ -86,7 +105,7 @@ For an automated preparation followed immediately by the build, Fedora may
 instead invoke the rootfs with:
 
 ```bash
-maintainer/enter-build-rootfs.sh /usr/bin/bash /repo/maintainer/run-private-build-in-rootfs.sh
+maintainer/enter-build-rootfs.sh /usr/bin/bash /repo/maintainer/run-build-in-rootfs.sh
 ```
 
 The script initialises the copied rootfs CA trust and package keyring, installs
@@ -131,7 +150,7 @@ pkg-config --modversion \
 Still inside the rootfs:
 
 ```bash
-/repo/maintainer/build-private-bundle.sh
+/repo/maintainer/build-bundle.sh
 ```
 
 The build first creates the four pacman packages in dependency order:
@@ -144,11 +163,11 @@ Each upstream release archive is checked against `maintainer/packages/sources.lo
 The two C libraries are installed only into the disposable copied rootfs so the
 next package can compile; the live Deck is not touched. The build verifies the
 pkg-config metadata and imports the compiled `gbinder` module using the copied
-target's Python. It then builds the private compositor. The build stops unless
+target's Python. It then builds the bundled compositor. The build stops unless
 wlroots needs `libdisplay-info.so.3`, Cage resolves the
 private wlroots through a relative RUNPATH, and the bundle excludes host system
 libraries. It also rejects libliftoff and Vulkan dependencies because neither
-is required for the narrow personal runtime. The wlroots configuration makes
+is required for the narrowly scoped runtime. The wlroots configuration makes
 this deterministic by selecting only the GLES2 renderer and explicitly
 disabling libliftoff, Vulkan, Xwayland, xcb-errors, and color-management
 support. Bundle assembly happens in a staging directory. A verified bundle is
@@ -164,7 +183,7 @@ exit
 The bundle will be available under its derived target name, for example:
 
 ```text
-~/steamos-waydroid-personal/out/steamos-3.8.16-b20260716.1-wlroots0.18.2-r2/
+~/steamos-waydroid-build/public/out/steamos-3.8.16-b20260716.1-wlroots0.18.2-r2/
 ```
 
 It contains the captured target fingerprint, the four target-built pacman
@@ -177,14 +196,14 @@ of replacing an earlier working build.
 Package the verified directory as an immutable archive plus a SHA-256 file:
 
 ```bash
-maintainer/publish-private-bundle.sh
+maintainer/publish-bundle.sh
 ```
 
 Publishing requires a clean Git worktree so the manifest's source revision
 identifies the exact recipes and compatibility patch used for the packages.
 
 The output is placed under `PUBLISH_ROOT`, which defaults to
-`~/steamos-waydroid-personal/publish`. Source code remains in Git; target-built
+`~/steamos-waydroid-build/public/publish`. Source code remains in Git; target-built
 binaries remain in this separate artifact store.
 `targets.manifest` maps every retained exact SteamOS target to its preferred
 published bundle. Deck-side `BUNDLE_VERSION="auto"` therefore selects a target
@@ -200,7 +219,7 @@ published bundle after pushing its source revision to the public repository:
 
 ```bash
 gh auth login
-maintainer/upload-private-bundle-to-github.sh
+maintainer/upload-bundle-to-github.sh
 ```
 
 The upload helper creates the long-lived Release when it does not exist. It
@@ -216,8 +235,8 @@ Clone the public GitHub repository:
 
 ```bash
 git clone \
-    https://github.com/pjohno/steamos-waydroid-personal.git \
-    ~/steamos-waydroid-personal
+    https://github.com/pjohno/steamos-waydroid-bundle.git \
+    ~/steamos-waydroid-bundle
 ```
 
 An existing checkout cloned from Fedora does not need to be recreated; its
@@ -231,7 +250,7 @@ On the first normal or repair run, the installer automatically creates
 is required for normal installation. To deliberately replace that source, run:
 
 ```bash
-cd ~/steamos-waydroid-personal
+cd ~/steamos-waydroid-bundle
 ./steamos-waydroid-installer.sh --configure-artifacts
 ```
 
@@ -248,7 +267,7 @@ Private GitHub is an advanced alternative. Its resulting configuration is:
 
 ```bash
 ARTIFACT_SOURCE="github-release"
-GITHUB_REPOSITORY="YOUR_USERNAME/steamos-waydroid-personal"
+GITHUB_REPOSITORY="YOUR_USERNAME/YOUR_PRIVATE_REPOSITORY"
 GITHUB_RELEASE_TAG="private-bundles"
 BUNDLE_VERSION="auto"
 ```
@@ -286,7 +305,7 @@ entry produces target details and maintainer recovery choices, then exits
 without touching SteamOS or the Android image:
 
 ```bash
-cd ~/steamos-waydroid-personal
+cd ~/steamos-waydroid-bundle
 ./steamos-waydroid-installer.sh
 ```
 
@@ -333,10 +352,10 @@ package-by-package version diff, an assessment, and suggested commands. Reports
 are created by Deck artifact installation, installer preflight, and Game Mode
 launch checks.
 
-Failures inside `build-private-bundle.sh` create a Fedora-side Markdown report:
+Failures inside `build-bundle.sh` create a Fedora-side Markdown report:
 
 ```text
-~/steamos-waydroid-personal/out/reports/
+~/steamos-waydroid-build/public/reports/
 ```
 
 It records the failed build stage and command, target fingerprint, repository
@@ -355,7 +374,7 @@ state, exit Steam completely and run:
 
 This keeps the Git checkout, `~/Android_Waydroid/waydroid.img`, Android
 applications, settings and logins under `~/.local/share/waydroid`, and legacy
-`~/waydroid` user state when present. It removes the private bundles, installed
+`~/waydroid` user state when present. It removes the installed bundles,
 host packages, artifact configuration, reports, shortcuts and installer-owned
 system integration. The next normal installer run detects and reuses the
 preserved Android image and host-side Android data after recreating the host

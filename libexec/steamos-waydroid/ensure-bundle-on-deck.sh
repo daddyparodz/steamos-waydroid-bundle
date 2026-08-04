@@ -29,7 +29,7 @@ bundle_matches_current_target() {
     [[ -d "$candidate" ]] || return 1
     [[ -f "$candidate/.verified" ]] || return 1
     [[ -x "$candidate/tools/check-bundle-target.sh" ]] || return 1
-    "$SCRIPT_DIR/verify-private-bundle.sh" "$candidate" > /dev/null 2>&1 || return 1
+    "$SCRIPT_DIR/verify-bundle.sh" "$candidate" > /dev/null 2>&1 || return 1
     "$candidate/tools/check-bundle-target.sh" "$candidate" > /dev/null 2>&1
 }
 
@@ -63,7 +63,7 @@ while IFS= read -r candidate; do
 done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2> /dev/null | sort -r)
 
 printf 'No matching local bundle is installed; checking the artifact source...\n'
-"$SCRIPT_DIR/install-private-bundle-on-deck.sh"
+"$SCRIPT_DIR/install-bundle-on-deck.sh"
 
 if ! bundle_matches_current_target "$CURRENT_LINK"; then
     die "artifact installation did not activate a bundle matching this SteamOS target"

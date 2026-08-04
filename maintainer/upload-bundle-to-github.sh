@@ -15,7 +15,7 @@ done
 resolve_bundle_version
 
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
-GITHUB_RELEASE_TAG="${GITHUB_RELEASE_TAG:-private-bundles}"
+GITHUB_RELEASE_TAG="${GITHUB_RELEASE_TAG:-bundles}"
 [[ "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || \
     die "GITHUB_REPOSITORY must use the OWNER/REPOSITORY form"
 [[ "$GITHUB_RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || \
@@ -40,7 +40,7 @@ catalog_assets=(
 )
 for asset in "${immutable_assets[@]}" "${catalog_assets[@]}"; do
     [[ -f "$asset" ]] || \
-        die "published asset is missing: $asset (run maintainer/publish-private-bundle.sh first)"
+        die "published asset is missing: $asset (run maintainer/publish-bundle.sh first)"
 done
 
 SOURCE_REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"

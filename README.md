@@ -1,4 +1,4 @@
-# SteamOS Android Waydroid Installer
+# SteamOS Waydroid Bundle
 
 A collection of tools that is packaged into an easy to use script that is streamlined and tested to work with the Steam Deck running on SteamOS.
 * The main program that does all the heavy lifting is [Waydroid - a container-based approach to boot a full Android system on a regular GNU/Linux system.](https://github.com/waydroid/waydroid)
@@ -8,6 +8,10 @@ A collection of tools that is packaged into an easy to use script that is stream
 This public edition installs only target-built bundles published for the exact
 SteamOS release and userspace ABI running on the Deck. It is based on
 [ryanrudolfoba's SteamOS Waydroid Installer](https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer).
+The original commit history and GPL-3.0 licence are retained. Historical
+videos, donation links, screenshots, and acknowledgements below belong to and
+support the upstream project and its contributors unless explicitly stated
+otherwise.
 
 Normal Deck users should run only `steamos-waydroid-installer.sh`. Internal
 runtime helpers live under `libexec/`; reproducible bundle-building tools live
@@ -15,7 +19,7 @@ under `maintainer/` and are not Deck commands. See the
 [maintainer guide](maintainer/README.md) only when producing bundles.
 
 ```sh
-git clone --depth=1 https://github.com/pjohno/steamos-waydroid-personal.git
+git clone --depth=1 https://github.com/pjohno/steamos-waydroid-bundle.git
 ```
 
 **Script has gone through several updates - this now allows you to install Android 11 / Android 13 and their TV counterparts - Android 11 TV / Android 13 TV!**
@@ -266,7 +270,7 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 2. Clone the GitHub repository:
    ```sh
    cd ~/
-   git clone --depth=1 https://github.com/pjohno/steamos-waydroid-personal.git
+   git clone --depth=1 https://github.com/pjohno/steamos-waydroid-bundle.git
    ```
 
 3. Execute the script. On first run it creates the ignored local
@@ -278,7 +282,7 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
    without modifying SteamOS or the Android image. \
 
    ```sh
-   cd ~/steamos-waydroid-personal
+   cd ~/steamos-waydroid-bundle
    chmod +x steamos-waydroid-installer.sh
    ./steamos-waydroid-installer.sh
    ```
@@ -407,12 +411,14 @@ Answer - You might have connected to a slow sourceforge mirror. Press CTRL-C to 
 Answer - This issue happens if Steam client cant be run because the script was called from an ssh or virtual tty session. Make sure to run the script on Desktop Mode via konsole.
 
 # A Note on SteamOS Updates
-When there is a SteamOS update the waydroid will be wiped. This is normal behavior due to how SteamOS applies updates. \
-If the private Android image still exists, run the installer normally. It
+When SteamOS switches to an updated system image, the Waydroid host packages
+and system integration may be removed. The persistent Android image and user
+data under the `deck` user's home normally remain. \
+If the persistent Android image still exists, run the installer normally. It
 automatically selects protected repair mode and restores erased host integration
 without reinitializing Android:
 ```sh
-cd ~/steamos-waydroid-personal
+cd ~/steamos-waydroid-bundle
 ./steamos-waydroid-installer.sh
 ```
 The explicit `--repair` option has the same effect but fails when no persistent

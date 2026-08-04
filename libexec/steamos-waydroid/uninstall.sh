@@ -150,7 +150,7 @@ run reuses the preserved Android state, applications and logins.
 EOF
     if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
         cat <<'EOF'
-Clean host-reset mode also removes private Cage/wlroots bundles, artifact
+Clean host-reset mode also removes installed Cage/wlroots bundles, artifact
 configuration, and compatibility reports so artifact setup is exercised again.
 EOF
     else

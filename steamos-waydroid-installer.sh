@@ -38,7 +38,7 @@ esac
 clear
 
 echo SteamOS Waydroid Installer - target-built public bundle edition
-echo https://github.com/pjohno/steamos-waydroid-personal
+echo https://github.com/pjohno/steamos-waydroid-bundle
 echo Based on the installer by ryanrudolf / 10MinuteSteamDeckGamer
 sleep 2
 
@@ -50,7 +50,7 @@ elif [ -r .source-version ]
 then
 	SCRIPT_VERSION_SHA=$(cat .source-version)
 else
-	SCRIPT_VERSION_SHA=personal
+	SCRIPT_VERSION_SHA=development
 fi
 if [ ! -r /etc/os-release ]
 then
@@ -171,13 +171,13 @@ LOGFILE=$WORKING_DIR/logfile
 WAYDROID_SCRIPT=https://github.com/casualsnek/waydroid_script.git
 WAYDROID_SCRIPT_DIR=$(mktemp -d)/waydroid_script
 ARM_Choice=libhoudini
-PRIVATE_BUNDLE=$HOME/.local/opt/steamos-waydroid/current
-PRIVATE_CAGE=$PRIVATE_BUNDLE/bin/cage
-PRIVATE_WLR_RANDR=$PRIVATE_BUNDLE/bin/wlr-randr
-PRIVATE_TARGET_CHECK=$PRIVATE_BUNDLE/tools/check-bundle-target.sh
-PRIVATE_COMPATIBILITY_REPORT=$PRIVATE_BUNDLE/tools/compatibility-report.sh
-PRIVATE_TARGET_ALLOW=$HOME/.local/opt/steamos-waydroid/allow-target-mismatch
-HOST_PACKAGE_ROOT=$PRIVATE_BUNDLE/packages
+ACTIVE_BUNDLE=$HOME/.local/opt/steamos-waydroid/current
+BUNDLED_CAGE=$ACTIVE_BUNDLE/bin/cage
+BUNDLED_WLR_RANDR=$ACTIVE_BUNDLE/bin/wlr-randr
+BUNDLE_TARGET_CHECK=$ACTIVE_BUNDLE/tools/check-bundle-target.sh
+BUNDLE_COMPATIBILITY_REPORT=$ACTIVE_BUNDLE/tools/compatibility-report.sh
+BUNDLE_TARGET_ALLOW=$HOME/.local/opt/steamos-waydroid/allow-target-mismatch
+HOST_PACKAGE_ROOT=$ACTIVE_BUNDLE/packages
 
 # android TV builds
 ANDROID13_TV_OTA=https://ota.supechicken666.dev
@@ -214,33 +214,33 @@ packaged_python_version=$(bsdtar -tf "${python_package[0]}" | \
 host_python_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 if [ -z "$packaged_python_version" ] || [ "$packaged_python_version" != "$host_python_version" ]
 then
-	echo "Private python-gbinder targets Python ${packaged_python_version:-unknown}, but SteamOS provides Python $host_python_version." >&2
+	echo "Bundled python-gbinder targets Python ${packaged_python_version:-unknown}, but SteamOS provides Python $host_python_version." >&2
 	echo Build and publish a compatible bundle before continuing. >&2
 	exit 1
 fi
 
 # Defence in depth: repeat the active-bundle verification before continuing.
-if [ ! -x "$PRIVATE_CAGE" ] || [ ! -x "$PRIVATE_WLR_RANDR" ] || \
-	[ ! -x "$PRIVATE_TARGET_CHECK" ] || \
-	[ ! -x "$PRIVATE_COMPATIBILITY_REPORT" ] || \
-	[ ! -f "$PRIVATE_BUNDLE/.verified" ]
+if [ ! -x "$BUNDLED_CAGE" ] || [ ! -x "$BUNDLED_WLR_RANDR" ] || \
+	[ ! -x "$BUNDLE_TARGET_CHECK" ] || \
+	[ ! -x "$BUNDLE_COMPATIBILITY_REPORT" ] || \
+	[ ! -f "$ACTIVE_BUNDLE/.verified" ]
 then
 	echo Target-built bundle is missing or unverified.
-	echo Expected bundle: $PRIVATE_BUNDLE
+	echo Expected bundle: $ACTIVE_BUNDLE
 	echo Run the installer again and inspect the bundle-selection error.
 	exit 1
 fi
-target_check_args=("$PRIVATE_BUNDLE")
-active_bundle_version=$(basename "$(readlink -f "$PRIVATE_BUNDLE")")
-if [ -r "$PRIVATE_TARGET_ALLOW" ] && \
-	[ "$(cat "$PRIVATE_TARGET_ALLOW")" = "$active_bundle_version" ]
+target_check_args=("$ACTIVE_BUNDLE")
+active_bundle_version=$(basename "$(readlink -f "$ACTIVE_BUNDLE")")
+if [ -r "$BUNDLE_TARGET_ALLOW" ] && \
+	[ "$(cat "$BUNDLE_TARGET_ALLOW")" = "$active_bundle_version" ]
 then
 	target_check_args+=(--allow-target-mismatch)
 fi
-if ! "$PRIVATE_TARGET_CHECK" "${target_check_args[@]}"
+if ! "$BUNDLE_TARGET_CHECK" "${target_check_args[@]}"
 then
 	report_file="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid/reports/$(date -u +%Y%m%dT%H%M%SZ)-compatibility.md"
-	"$PRIVATE_COMPATIBILITY_REPORT" "$PRIVATE_BUNDLE" "$report_file" || true
+	"$BUNDLE_COMPATIBILITY_REPORT" "$ACTIVE_BUNDLE" "$report_file" || true
 	echo The active bundle was built for a different SteamOS target.
 	echo Compatibility report: "$report_file"
 	echo Build, publish, and install a bundle for the current SteamOS build first.
@@ -524,7 +524,9 @@ echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 
 # Copy Waydroid launcher dependencies.
 cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
-	extras/scripts/Waydroid-Updater.sh extras/scripts/select-private-bundle ~/Android_Waydroid
+	extras/scripts/Waydroid-Updater.sh extras/scripts/select-bundle ~/Android_Waydroid
+# Remove the pre-public helper name after installing its neutral replacement.
+rm -f ~/Android_Waydroid/select-private-bundle
 for config_file in fake_wifi fake_touch
 do
 	if [ "$REPAIR_MODE" != true ] || [ ! -e "$HOME/Android_Waydroid/config/$config_file" ]
@@ -537,7 +539,7 @@ mkdir -p ~/Android_Waydroid/icons
 cp -a extras/icons/. ~/Android_Waydroid/icons/
 
 # Waydroid launcher, toolbox and updater.
-chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-private-bundle
+chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-bundle
 
 # Dolphin File Manager extension for root access.
 mkdir -p ~/.local/share/kio/servicemenus
@@ -659,7 +661,7 @@ fi
 		       -O /var/lib/waydroid/overlay/system/etc/hosts
 
 	Android_Choice=$(zenity --width 1040 --height 320 --list --radiolist --multiple \
-		--title "SteamOS Waydroid Installer  - https://github.com/ryanrudolfoba/SteamOS-Waydroid-Installer"\
+		--title "SteamOS Waydroid Bundle  - https://github.com/pjohno/steamos-waydroid-bundle"\
 		--column "Select One" \
 		--column "Option" \
 		--column="Description - Read this carefully!"\

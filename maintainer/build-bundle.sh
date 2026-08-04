@@ -87,7 +87,7 @@ fi
 
 SOURCE_ROOT="${SOURCE_ROOT:-/work/src}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/work/out}"
-PRIVATE_PREFIX="${PRIVATE_PREFIX:-/opt/steamos-waydroid-build}"
+BUNDLE_PREFIX="${BUNDLE_PREFIX:-/opt/steamos-waydroid-build}"
 BUNDLE_ROOT="$OUTPUT_ROOT/$BUNDLE_VERSION"
 STAGING_ROOT="$OUTPUT_ROOT/.$BUNDLE_VERSION.staging"
 
@@ -114,10 +114,10 @@ setup_build_directory() {
     local source_directory="$1"
     shift
 
-    if [[ -d "$source_directory/build-private" ]]; then
-        meson setup --wipe "$source_directory/build-private" "$source_directory" "$@"
+    if [[ -d "$source_directory/build-bundle" ]]; then
+        meson setup --wipe "$source_directory/build-bundle" "$source_directory" "$@"
     else
-        meson setup "$source_directory/build-private" "$source_directory" "$@"
+        meson setup "$source_directory/build-bundle" "$source_directory" "$@"
     fi
 }
 
@@ -158,7 +158,7 @@ clone_at_tag \
 set_build_report_stage wlroots
 printf 'Building wlroots %s...\n' "$WLROOTS_VERSION"
 setup_build_directory "$SOURCE_ROOT/wlroots" \
-    --prefix="$PRIVATE_PREFIX" \
+    --prefix="$BUNDLE_PREFIX" \
     --libdir=lib \
     --buildtype=release \
     --wrap-mode=nofallback \
@@ -169,43 +169,43 @@ setup_build_directory "$SOURCE_ROOT/wlroots" \
     -Drenderers=gles2 \
     -Dlibliftoff=disabled \
     -Dcolor-management=disabled
-meson compile -C "$SOURCE_ROOT/wlroots/build-private"
-meson install -C "$SOURCE_ROOT/wlroots/build-private"
+meson compile -C "$SOURCE_ROOT/wlroots/build-bundle"
+meson install -C "$SOURCE_ROOT/wlroots/build-bundle"
 
-WLROOTS_LIBRARY="$(find "$PRIVATE_PREFIX/lib" -maxdepth 1 \
+WLROOTS_LIBRARY="$(find "$BUNDLE_PREFIX/lib" -maxdepth 1 \
     -type f -name 'libwlroots-0.18.so*' -print -quit)"
-[[ -n "$WLROOTS_LIBRARY" ]] || die "private wlroots library was not installed"
+[[ -n "$WLROOTS_LIBRARY" ]] || die "bundled wlroots library was not installed"
 
 readelf -d "$WLROOTS_LIBRARY" | grep -F 'libdisplay-info.so.3' >/dev/null || \
-    die "private wlroots does not require libdisplay-info.so.3"
+    die "bundled wlroots does not require libdisplay-info.so.3"
 if readelf -d "$WLROOTS_LIBRARY" | grep -F 'libdisplay-info.so.2' >/dev/null; then
-    die "private wlroots incorrectly requires libdisplay-info.so.2"
+    die "bundled wlroots incorrectly requires libdisplay-info.so.2"
 fi
 
-export PKG_CONFIG_PATH="$PRIVATE_PREFIX/lib/pkgconfig"
-export LD_LIBRARY_PATH="$PRIVATE_PREFIX/lib"
+export PKG_CONFIG_PATH="$BUNDLE_PREFIX/lib/pkgconfig"
+export LD_LIBRARY_PATH="$BUNDLE_PREFIX/lib"
 
 set_build_report_stage cage
 printf 'Building Cage %s...\n' "$CAGE_VERSION"
 setup_build_directory "$SOURCE_ROOT/cage" \
-    --prefix="$PRIVATE_PREFIX" \
+    --prefix="$BUNDLE_PREFIX" \
     --libdir=lib \
     --buildtype=release \
     --wrap-mode=nofallback \
     -Dwerror=false
-meson compile -C "$SOURCE_ROOT/cage/build-private"
-meson install -C "$SOURCE_ROOT/cage/build-private"
+meson compile -C "$SOURCE_ROOT/cage/build-bundle"
+meson install -C "$SOURCE_ROOT/cage/build-bundle"
 
 set_build_report_stage wlr-randr
 printf 'Building wlr-randr %s...\n' "$WLR_RANDR_VERSION"
 setup_build_directory "$SOURCE_ROOT/wlr-randr" \
-    --prefix="$PRIVATE_PREFIX" \
+    --prefix="$BUNDLE_PREFIX" \
     --libdir=lib \
     --buildtype=release \
     --wrap-mode=nofallback \
     -Dwerror=false
-meson compile -C "$SOURCE_ROOT/wlr-randr/build-private"
-meson install -C "$SOURCE_ROOT/wlr-randr/build-private"
+meson compile -C "$SOURCE_ROOT/wlr-randr/build-bundle"
+meson install -C "$SOURCE_ROOT/wlr-randr/build-bundle"
 
 if [[ -e "$BUNDLE_ROOT" ]]; then
     if [[ -f "$BUNDLE_ROOT/.verified" ]]; then
@@ -222,9 +222,9 @@ install -d \
     "$STAGING_ROOT/licenses" \
     "$STAGING_ROOT/packages" \
     "$STAGING_ROOT/tools"
-install -m 0755 "$PRIVATE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
-install -m 0755 "$PRIVATE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
-cp -a "$PRIVATE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
+install -m 0755 "$BUNDLE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
+install -m 0755 "$BUNDLE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
+cp -a "$BUNDLE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
 cp -a "$OUTPUT_ROOT/.host-packages-$BUNDLE_VERSION"/. "$STAGING_ROOT/packages/"
 install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env"
 install -m 0755 \
@@ -248,7 +248,7 @@ cp "$SOURCE_ROOT/wlr-randr/LICENSE" "$STAGING_ROOT/licenses/wlr-randr.txt"
 unset LD_LIBRARY_PATH PKG_CONFIG_PATH
 set_build_report_stage bundle-verification
 STEAMOS_WAYDROID_INTERNAL=1 \
-    "$DECK_RUNTIME_ROOT/verify-private-bundle.sh" "$STAGING_ROOT"
+    "$DECK_RUNTIME_ROOT/verify-bundle.sh" "$STAGING_ROOT"
 "$DECK_RUNTIME_ROOT/check-bundle-target.sh" "$STAGING_ROOT"
 printf 'verified\n' > "$STAGING_ROOT/.verified"
 mv "$STAGING_ROOT" "$BUNDLE_ROOT"

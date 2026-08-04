@@ -3,15 +3,15 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_BUNDLE_SELECTOR="$SCRIPT_DIR/select-private-bundle"
+LOCAL_BUNDLE_SELECTOR="$SCRIPT_DIR/select-bundle"
 if [ -x "$LOCAL_BUNDLE_SELECTOR" ] && \
 	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1)
 then
-	kdialog --error "No installed private Cage bundle matches this SteamOS build.
+	kdialog --error "No installed Cage bundle matches this SteamOS build.
 
 $SELECTOR_OUTPUT
 
-Run the personal installer from Desktop Mode to fetch or repair the matching bundle."
+Run the SteamOS Waydroid installer from Desktop Mode to fetch or repair the matching bundle."
 	exit 1
 fi
 BUNDLE="$HOME/.local/opt/steamos-waydroid/current"
@@ -26,7 +26,7 @@ RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
 if [ ! -x "$CAGE" ] || [ ! -x "$WLR_RANDR" ] || \
 	[ ! -x "$TARGET_CHECK" ] || [ ! -f "$BUNDLE/.verified" ]
 then
-	kdialog --error "Private Cage bundle is missing or unverified. Run the Fedora deployment tool."
+	kdialog --error "Cage bundle is missing or unverified. Run the installer from Desktop Mode."
 	exit 1
 fi
 target_check_args=("$BUNDLE")
@@ -42,7 +42,7 @@ then
 	then
 		"$COMPATIBILITY_REPORT" "$BUNDLE" "$REPORT_FILE" || true
 	fi
-	kdialog --error "The private Cage bundle does not match this SteamOS build.
+	kdialog --error "The Cage bundle does not match this SteamOS build.
 
 $TARGET_CHECK_OUTPUT
 
@@ -54,7 +54,7 @@ fi
 if [ ! -x /usr/bin/waydroid ]
 then
 	kdialog --sorry "Cannot start Waydroid because the SteamOS host component is missing. \
-\nIf SteamOS was recently updated, run the personal installer repair from Desktop Mode. \
+\nIf SteamOS was recently updated, run the SteamOS Waydroid installer from Desktop Mode. \
 \nSteamOS version: $(grep -i VERSION_ID /etc/os-release | cut -d '=' -f 2) \
 \nKernel version: $(uname -r | cut -d '-' -f 1-5)"
 	exit 1
@@ -62,7 +62,7 @@ fi
 
 if [ -z "$RESOLUTION" ] || [ ! -r "$CONFIG_DIR/fake_wifi" ] || [ ! -r "$CONFIG_DIR/fake_touch" ]
 then
-	kdialog --error "Waydroid launcher configuration is incomplete. Reinstall the personal host component."
+	kdialog --error "Waydroid launcher configuration is incomplete. Reinstall the host component."
 	exit 1
 fi
 

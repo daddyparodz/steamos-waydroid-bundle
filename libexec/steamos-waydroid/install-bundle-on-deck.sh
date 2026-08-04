@@ -39,7 +39,7 @@ source "$SCRIPT_DIR/lib/target-fingerprint.sh"
 ARTIFACT_SOURCE="${ARTIFACT_SOURCE:-}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-}"
 GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-}"
-GITHUB_RELEASE_TAG="${GITHUB_RELEASE_TAG:-private-bundles}"
+GITHUB_RELEASE_TAG="${GITHUB_RELEASE_TAG:-bundles}"
 [[ -n "$ARTIFACT_SOURCE" ]] || die "ARTIFACT_SOURCE is not configured"
 [[ -n "$BUNDLE_VERSION" ]] || die "BUNDLE_VERSION is not configured"
 
@@ -182,7 +182,7 @@ else
 fi
 
 printf 'Verifying the bundle against this SteamOS host...\n'
-"$SCRIPT_DIR/verify-private-bundle.sh" "$TARGET_ROOT"
+"$SCRIPT_DIR/verify-bundle.sh" "$TARGET_ROOT"
 [[ -f "$TARGET_ROOT/.verified" ]] || die "artifact has no build verification marker"
 target_check_arguments=("$TARGET_ROOT")
 if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then

@@ -75,7 +75,7 @@ run_nonprivileged_sanity_checks() {
 }
 
 ensure_sanity_bundle() {
-	if STEAMOS_WAYDROID_INTERNAL=1 "$DECK_RUNTIME/ensure-private-bundle-on-deck.sh"
+	if STEAMOS_WAYDROID_INTERNAL=1 "$DECK_RUNTIME/ensure-bundle-on-deck.sh"
 	then
 		return 0
 	fi

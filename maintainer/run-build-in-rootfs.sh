@@ -15,4 +15,4 @@ IFS=$'\n\t'
 }
 
 /repo/maintainer/prepare-build-rootfs.sh
-/repo/maintainer/build-private-bundle.sh
+/repo/maintainer/build-bundle.sh

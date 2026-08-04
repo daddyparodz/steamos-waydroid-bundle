@@ -8,8 +8,8 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_FILE="${DECK_CONFIG_FILE:-$REPO_ROOT/.deck-config.env}"
 FORCE=false
 USE_TRUSTED_DEFAULTS=false
-OFFICIAL_GITHUB_REPOSITORY="pjohno/steamos-waydroid-personal"
-OFFICIAL_RELEASE_TAG="private-bundles"
+OFFICIAL_GITHUB_REPOSITORY="pjohno/steamos-waydroid-bundle"
+OFFICIAL_RELEASE_TAG="bundles"
 OFFICIAL_ARTIFACT_SOURCE="https://github.com/$OFFICIAL_GITHUB_REPOSITORY/releases/download/$OFFICIAL_RELEASE_TAG"
 
 case "${1:-}" in
@@ -126,7 +126,7 @@ else
             ;;
         3)
             prompt_value "SSH artifact source (HOST_ALIAS:PATH)" \
-                "fedora-build:steamos-waydroid-personal/publish"
+                "fedora-build:steamos-waydroid-build/public/publish"
             artifact_source="$PROMPT_VALUE"
             [[ "$artifact_source" =~ ^[A-Za-z0-9_.@-]+:[A-Za-z0-9_./~-]+$ ]] || \
                 die "SSH source must use the HOST_ALIAS:PATH form without spaces"

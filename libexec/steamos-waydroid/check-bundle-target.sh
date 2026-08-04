@@ -8,7 +8,7 @@ if [[ -r "$SCRIPT_DIR/lib/target-fingerprint.sh" ]]; then
     # shellcheck source=lib/target-fingerprint.sh
     source "$SCRIPT_DIR/lib/target-fingerprint.sh"
 elif [[ -r "$SCRIPT_DIR/target-fingerprint.sh" ]]; then
-    # Installed private bundle layout.
+    # Installed bundle layout.
     # shellcheck source=lib/target-fingerprint.sh
     source "$SCRIPT_DIR/target-fingerprint.sh"
 else

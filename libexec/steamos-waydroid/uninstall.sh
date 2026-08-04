@@ -181,7 +181,7 @@ sudo steamos-readonly disable
 READONLY_DISABLED=true
 
 packages=()
-for package in waydroid python-gbinder libgbinder libglibutil; do
+for package in waydroid python-gbinder libgbinder libglibutil binder_linux-dkms; do
     if pacman -Qq "$package" > /dev/null 2>&1; then
         packages+=("$package")
     fi
@@ -192,6 +192,9 @@ fi
 
 sudo rm -f -- \
     /etc/sudoers.d/zzzzzzzz-waydroid \
+    /etc/modules-load.d/waydroid.conf \
+    /etc/modules-load.d/waydroid_binder.conf \
+    /etc/modprobe.d/waydroid_binder.conf \
     /usr/bin/waydroid-startup-scripts \
     /usr/bin/waydroid-shutdown-scripts \
     /usr/bin/waydroid-mount \

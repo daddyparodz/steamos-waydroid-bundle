@@ -281,7 +281,9 @@ artifact configuration.
 The installer or repair mode must be started locally from Konsole in SteamOS
 Desktop Mode so graphical prompts and Steam shortcut creation use the real
 desktop session. It ensures a matching target-built bundle is active before
-requesting privileged SteamOS changes:
+requesting privileged SteamOS changes. An unavailable catalog or missing target
+entry produces target details and maintainer recovery choices, then exits
+without touching SteamOS or the Android image:
 
 ```bash
 cd ~/steamos-waydroid-personal
@@ -331,7 +333,23 @@ Failures inside `build-private-bundle.sh` create a Fedora-side Markdown report:
 It records the failed build stage and command, target fingerprint, repository
 revision, and the last 120 lines of every available Meson log. The terminal
 prints the exact report path when one is written. Deck reports are deliberately
-retained by the reset script so a failed run can still be diagnosed afterward.
+retained by the ordinary uninstall modes so a failed run can still be diagnosed
+afterward.
+
+To exercise first-time Deck-side artifact selection, verification, package
+installation and host integration without losing Android applications or login
+state, exit Steam completely and run:
+
+```bash
+./steamos-waydroid-installer.sh --reset-host-keep-android
+```
+
+This keeps the Git checkout and `~/Android_Waydroid/waydroid.img`, but removes
+the private bundles, installed host packages, artifact configuration, reports,
+shortcuts and installer-owned system integration. The next normal installer
+run detects and reuses the preserved Android image after recreating the host
+environment. Make an independent backup of the image before relying on it as
+the only copy of valuable Android data.
 
 ## Full two-machine reset
 

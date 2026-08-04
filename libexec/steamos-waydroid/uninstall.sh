@@ -10,16 +10,21 @@ ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
 SHORTCUT_MANAGER="$PROJECT_ROOT/extras/icon.py"
 READONLY_DISABLED=false
 FULL_PROCESS_RESET=false
+KEEP_ANDROID_IMAGE=false
+PRESERVED_IMAGE=""
+PRESERVATION_ROOT=""
 
 if [[ ${1:-} == --full-process ]]; then
     FULL_PROCESS_RESET=true
+elif [[ ${1:-} == --keep-android ]]; then
+    KEEP_ANDROID_IMAGE=true
 elif [[ $# -ne 0 ]]; then
-    printf 'usage: %s [--full-process]\n' "$0" >&2
+    printf 'usage: %s [--full-process | --keep-android]\n' "$0" >&2
     exit 1
 fi
 
 if [[ ${STEAMOS_WAYDROID_INTERNAL:-} != 1 ]]; then
-    printf 'error: run ./steamos-waydroid-installer.sh --uninstall or --uninstall-all\n' >&2
+    printf 'error: run ./steamos-waydroid-installer.sh with a supported reset option\n' >&2
     exit 1
 fi
 
@@ -29,7 +34,30 @@ restore_readonly() {
         sudo steamos-readonly enable || true
     fi
 }
-trap restore_readonly EXIT
+
+restore_android_image() {
+    [[ "$KEEP_ANDROID_IMAGE" == true ]] || return 0
+    [[ -n "$PRESERVED_IMAGE" && -e "$PRESERVED_IMAGE" ]] || return 0
+
+    if [[ -e "$ANDROID_IMAGE" ]]; then
+        printf 'error: refusing to overwrite Android image while restoring it: %s\n' \
+            "$ANDROID_IMAGE" >&2
+        printf 'Preserved Android image remains at: %s\n' "$PRESERVED_IMAGE" >&2
+        return 1
+    fi
+
+    mkdir -p -- "$ANDROID_HOME"
+    sudo mv -- "$PRESERVED_IMAGE" "$ANDROID_IMAGE"
+    rmdir -- "$PRESERVATION_ROOT" 2> /dev/null || true
+    PRESERVED_IMAGE=""
+    PRESERVATION_ROOT=""
+}
+
+cleanup() {
+    restore_android_image || true
+    restore_readonly
+}
+trap cleanup EXIT
 
 if [[ "$(id -un)" != deck ]]; then
     printf 'error: run this script as the deck user, not as root\n' >&2
@@ -47,7 +75,31 @@ if pgrep -x steam > /dev/null; then
     exit 1
 fi
 
-cat <<'EOF'
+if [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+    if [[ ! -f "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE" ]]; then
+        printf 'error: preservation requires a regular Android image: %s\n' \
+            "$ANDROID_IMAGE" >&2
+        exit 1
+    fi
+    preservation_candidate="$HOME/.local/state/steamos-waydroid-preserved-reset"
+    if [[ -e "$preservation_candidate" ]]; then
+        printf 'error: preservation staging path already exists: %s\n' \
+            "$preservation_candidate" >&2
+        printf 'Inspect or recover it before retrying this reset.\n' >&2
+        exit 1
+    fi
+    cat <<EOF
+This resets all installer-owned SteamOS host state while preserving:
+  - $ANDROID_IMAGE
+  - this Git checkout
+
+It removes Android launchers and per-user host integration, Waydroid packages,
+private Cage/wlroots bundles, artifact configuration, and system integration.
+The next normal installer run will exercise first-time host setup and reuse the
+preserved Android state, applications and logins.
+EOF
+else
+    cat <<'EOF'
 This permanently deletes this installer's Waydroid instance, including:
   - Android applications, settings and files
   - Waydroid packages and installer-owned system integration
@@ -59,6 +111,7 @@ By default it intentionally keeps:
 
 These retained prerequisites are required to run the installer again.
 EOF
+fi
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     cat <<'EOF'
@@ -72,6 +125,8 @@ fi
 expected_confirmation="DELETE WAYDROID"
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     expected_confirmation="DELETE EVERYTHING"
+elif [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+    expected_confirmation="RESET HOST KEEP ANDROID"
 fi
 read -r -p "Type $expected_confirmation to continue: " confirmation
 if [[ "$confirmation" != "$expected_confirmation" ]]; then
@@ -92,6 +147,20 @@ if [[ -f "$ANDROID_IMAGE" ]]; then
             sudo losetup -d "$loop_device"
         fi
     done < <(sudo losetup -j "$ANDROID_IMAGE")
+fi
+
+if [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+    if findmnt --mountpoint /var/lib/waydroid > /dev/null 2>&1 || \
+        sudo losetup -j "$ANDROID_IMAGE" | grep -q .; then
+        printf 'error: Android image is still mounted or attached; preservation stopped\n' >&2
+        exit 1
+    fi
+    printf 'Moving the Android image aside during host cleanup...\n'
+    PRESERVATION_ROOT="$HOME/.local/state/steamos-waydroid-preserved-reset"
+    mkdir -p -- "$(dirname -- "$PRESERVATION_ROOT")"
+    mkdir -m 0700 -- "$PRESERVATION_ROOT"
+    PRESERVED_IMAGE="$PRESERVATION_ROOT/waydroid.img"
+    sudo mv -- "$ANDROID_IMAGE" "$PRESERVED_IMAGE"
 fi
 
 printf 'Removing Steam shortcuts and their local artwork...\n'
@@ -150,6 +219,19 @@ fi
 
 sudo steamos-readonly enable
 READONLY_DISABLED=false
+
+if [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+    printf 'Restoring the preserved Android image...\n'
+    restore_android_image
+
+    printf 'Removing target-built bundles and machine-local artifact state...\n'
+    sudo rm -rf -- \
+        "$HOME/.local/opt/steamos-waydroid" \
+        "$HOME/.local/share/steamos-waydroid-installer" \
+        "$HOME/.local/state/steamos-waydroid"
+    sudo rm -f -- "$PROJECT_ROOT/.deck-config.env"
+fi
+
 trap - EXIT
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
@@ -182,6 +264,9 @@ EOF
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
     printf 'Clone the Git repository again, then pull and install the published bundle.\n'
+elif [[ "$KEEP_ANDROID_IMAGE" == true ]]; then
+    printf 'Android state was preserved at: %s\n' "$ANDROID_IMAGE"
+    printf 'Run the normal installer from this checkout to test first-time host setup.\n'
 else
     printf 'The Git checkout and verified target-built bundles were retained.\n'
 fi

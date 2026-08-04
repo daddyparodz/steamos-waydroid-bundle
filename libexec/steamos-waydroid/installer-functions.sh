@@ -1,6 +1,51 @@
 #!/bin/bash
 
 # define functions here
+restore_decky_loader () {
+	if [ "${DECKY_LOADER_STOPPED:-false}" = true ]
+	then
+		echo Re-enabling the Decky Loader plugin service.
+		if printf '%s\n' "$current_password" | \
+			sudo -S systemctl start plugin_loader.service
+		then
+			DECKY_LOADER_STOPPED=false
+		else
+			echo Warning: Decky Loader could not be restarted. >&2
+			return 1
+		fi
+	fi
+}
+
+prompt_restore_decky_loader () {
+	local prompt_status
+
+	if [ "${DECKY_LOADER_STOPPED:-false}" != true ]
+	then
+		return 0
+	fi
+
+	zenity --question \
+		--title "SteamOS Waydroid Installer" \
+		--text "Decky Loader was running before installation and was stopped temporarily.\n\nRestart Decky Loader now?" \
+		--width 500 --height 75
+	prompt_status=$?
+	case "$prompt_status" in
+		0)
+			restore_decky_loader
+			;;
+		1)
+			printf 'Decky Loader will remain stopped at the user\047s request.\n'
+			# The EXIT trap restores Decky after failures. Clear ownership here so an
+			# explicit choice to leave it stopped is respected on successful exit.
+			DECKY_LOADER_STOPPED=false
+			;;
+		*)
+			echo Warning: the Decky Loader restart prompt failed. >&2
+			return 1
+			;;
+	esac
+}
+
 mount_waydroid_var () {
 	# this will initialize and configure custom /var/lib/waydroid
 	# first make sure /var/lib/waydroid is not mounted
@@ -34,7 +79,7 @@ unmount_waydroid_var () {
 }
 
 cleanup_exit () {
-	# call this function to perform cleanup when a sanity check fails
+	# Call this function to clean up after a host-installation failure.
 	
 	echo Something went wrong! Performing cleanup. Run the script again to install waydroid.
 	
@@ -60,15 +105,11 @@ cleanup_exit () {
 	echo -e "$current_password\n" | sudo -S rm -rf ~/Android_Waydroid/*.sh ~/Android_Waydroid/config &> /dev/null
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable &> /dev/null
 	
-	# re-enable Decky Loader Plugin Loader service
-	if [ -f $PLUGIN_LOADER ]
-	then
-		echo Re-enabling the Decky Loader plugin loader service.
-		echo -e "$current_password\n" | sudo -S systemctl start plugin_loader.service
-	fi
+	# Re-enable Decky if this installer stopped it during preflight.
+	restore_decky_loader || true
 	
 	echo Cleanup completed. Please open an issue on the GitHub repo or leave a comment on the YT channel - 10MinuteSteamDeckGamer.
-	exit
+	exit 1
 }
 
 # apply custom config for controller detection, root and fingerprint spoof

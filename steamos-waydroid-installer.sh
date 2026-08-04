@@ -7,8 +7,9 @@ REPAIR_MODE=false
 CONFIGURE_ARTIFACTS=false
 UNINSTALL_MODE=false
 FULL_UNINSTALL_MODE=false
+RESET_HOST_KEEP_ANDROID_MODE=false
 usage () {
-	echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all]" >&2
+	echo "usage: $0 [--repair | --configure-artifacts | --uninstall | --uninstall-all | --reset-host-keep-android]" >&2
 }
 if [ "$#" -gt 1 ]
 then
@@ -21,6 +22,7 @@ case "${1:-}" in
 	--configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
 	--uninstall) UNINSTALL_MODE=true ;;
 	--uninstall-all) FULL_UNINSTALL_MODE=true ;;
+	--reset-host-keep-android) RESET_HOST_KEEP_ANDROID_MODE=true ;;
 	*)
 		usage
 		exit 1
@@ -44,17 +46,33 @@ then
 else
 	SCRIPT_VERSION_SHA=personal
 fi
-STEAMOS_VERSION=$(cat /etc/os-release | grep -i version_id | cut -d "=" -f2 | cut -d "." -f1-2)
-BASE_VERSION=3.8
-STEAMOS_BRANCH=$(steamos-select-branch -c)
+if [ ! -r /etc/os-release ]
+then
+	echo SteamOS release metadata is unavailable. >&2
+	exit 1
+fi
+# shellcheck source=/dev/null
+source /etc/os-release
+STEAMOS_VERSION_ID=${VERSION_ID:-unknown}
+STEAMOS_BUILD_ID=${BUILD_ID:-unknown}
+STEAMOS_BRANCH=$(steamos-select-branch -c 2> /dev/null || true)
 WORKING_DIR=$SCRIPT_DIR
 DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
 DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
 ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
+# shellcheck source=libexec/steamos-waydroid/installer-functions.sh
+source "$DECK_RUNTIME/installer-functions.sh"
+# shellcheck source=libexec/steamos-waydroid/installer-sanity-checks.sh
+source "$DECK_RUNTIME/installer-sanity-checks.sh"
 if [ "$FULL_UNINSTALL_MODE" = true ]
 then
 	STEAMOS_WAYDROID_INTERNAL=1 \
 		"$DECK_RUNTIME/uninstall.sh" --full-process
+	exit $?
+elif [ "$RESET_HOST_KEEP_ANDROID_MODE" = true ]
+then
+	STEAMOS_WAYDROID_INTERNAL=1 \
+		"$DECK_RUNTIME/uninstall.sh" --keep-android
 	exit $?
 elif [ "$UNINSTALL_MODE" = true ]
 then
@@ -68,7 +86,14 @@ then
 		exit 1
 	fi
 	exit 0
-elif [ ! -f "$DECK_CONFIG_FILE" ]
+fi
+
+if ! run_nonprivileged_sanity_checks
+then
+	exit 1
+fi
+
+if [ ! -f "$DECK_CONFIG_FILE" ]
 then
 	echo No Deck artifact configuration was found. Using the official public bundle source.
 	if ! STEAMOS_WAYDROID_INTERNAL=1 "$ARTIFACT_CONFIGURATOR" --defaults
@@ -80,7 +105,6 @@ fi
 LOGFILE=$WORKING_DIR/logfile
 WAYDROID_SCRIPT=https://github.com/casualsnek/waydroid_script.git
 WAYDROID_SCRIPT_DIR=$(mktemp -d)/waydroid_script
-FREE_HOME=$(df /home --output=avail | tail -n1)
 ARM_Choice=libhoudini
 PRIVATE_BUNDLE=$HOME/.local/opt/steamos-waydroid/current
 PRIVATE_CAGE=$PRIVATE_BUNDLE/bin/cage
@@ -116,10 +140,8 @@ fi
 
 # Select an already-installed exact target bundle, or fetch the matching
 # published artifact, before this installer performs privileged integration.
-if ! STEAMOS_WAYDROID_INTERNAL=1 "$DECK_RUNTIME/ensure-private-bundle-on-deck.sh"
+if ! ensure_sanity_bundle
 then
-	echo Unable to install or activate a target-built bundle for this SteamOS target.
-	echo Check .deck-config.env and its artifact source, then run the installer again.
 	exit 1
 fi
 
@@ -166,9 +188,6 @@ then
 	echo Build, publish, and install a bundle for the current SteamOS build first.
 	exit 1
 fi
-
-# define functions here
-source functions.sh
 
 abort_run () {
 	if [ "$REPAIR_MODE" = true ]
@@ -300,8 +319,16 @@ EOF
 	fi
 }
 
-# run the sanity checks
-source sanity-checks.sh
+# The bundle is present and verified; only now request sudo and stop Decky.
+if ! run_privileged_sanity_checks
+then
+	exit 1
+fi
+if [ "${DECKY_LOADER_STOPPED:-false}" = true ]
+then
+	trap restore_decky_loader EXIT
+	trap 'exit 130' HUP INT TERM
+fi
 
 # sanity checks are all good. lets go!
 if [ "$REPAIR_MODE" = true ]
@@ -654,6 +681,10 @@ else
 fi
 
 ensure_game_mode_shortcuts
+
+# If this run stopped Decky, offer to restart it before possibly ending the
+# Desktop Mode session. The EXIT trap remains as a retry after a start failure.
+prompt_restore_decky_loader || true
 
 # all done! Display dialog box for Gaming Mode
 prompt_return_to_gaming_mode

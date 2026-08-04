@@ -271,7 +271,11 @@ SteamOS has been stuck on 6.1.52-valve16-1 for several releases now so I think t
 
 3. Execute the script. On first run it creates the ignored local
    `.deck-config.env` with mode `0600`, selects the official public Release,
-   and uses the bundle matching the Deck's exact SteamOS target. \
+   and uses the bundle matching the Deck's exact SteamOS target. Before asking
+   for sudo, it checks Desktop Mode, the SteamOS release and branch, free space,
+   and whether a verified target bundle can be obtained. If the public bundle
+   catalog has not been published or has no entry for the target, it exits
+   without modifying SteamOS or the Android image. \
 
    ```sh
    cd ~/steamos-waydroid-personal
@@ -289,6 +293,10 @@ delete it through Steam before running the installer again.
 
 Advanced users can change the artifact source, but should do so only when they
 fully trust it: bundle packages are installed into SteamOS as root.
+
+If Decky Loader is active, the installer stops it temporarily and asks whether
+to restart it immediately before offering to return to Gaming Mode. Failures
+and interruptions restore Decky automatically.
 
 ```sh
 ./steamos-waydroid-installer.sh --configure-artifacts
@@ -334,6 +342,20 @@ Exit Steam completely in Desktop Mode, open Konsole, and run:
 This removes Waydroid and Android data but retains the checkout and verified
 bundles for reinstalling. To remove those prerequisites as well, use
 `--uninstall-all`. Both modes require an explicit typed confirmation.
+
+To test first-time host installation while retaining Android applications,
+settings, files and login sessions, use:
+
+```sh
+./steamos-waydroid-installer.sh --reset-host-keep-android
+```
+
+This preserves only `~/Android_Waydroid/waydroid.img` and the Git checkout. It
+removes the installed Waydroid packages, Cage/wlroots bundles, artifact
+configuration, shortcuts, launchers and installer-owned system integration.
+The next normal installer run rebuilds the host-side setup around the preserved
+Android state. Back up the image separately before using any reset mode when it
+contains irreplaceable data.
 
 # Troubleshooting / Filing Bug Reports
 1. If you encounter an issue with the script, try to [uninstall](#i-dont-want-this-anymore-i-want-to-uninstall), clone the repo again and perform an install.\

@@ -119,12 +119,15 @@ if [[ "$BUNDLE_VERSION" == auto ]]; then
             "$DOWNLOAD_ROOT/targets.manifest")"
     else
         printf 'Target catalog is not published yet; checking the legacy latest pointer.\n' >&2
-        fetch_file latest.manifest
-        latest_target="$(fingerprint_value \
-            "$DOWNLOAD_ROOT/latest.manifest" TARGET_ENVIRONMENT_ID)"
-        if [[ "$latest_target" == "$CURRENT_TARGET_ENVIRONMENT" ]]; then
-            BUNDLE_VERSION="$(manifest_value \
-                "$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+        if fetch_file latest.manifest; then
+            latest_target="$(fingerprint_value \
+                "$DOWNLOAD_ROOT/latest.manifest" TARGET_ENVIRONMENT_ID)"
+            if [[ "$latest_target" == "$CURRENT_TARGET_ENVIRONMENT" ]]; then
+                BUNDLE_VERSION="$(manifest_value \
+                    "$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+            fi
+        else
+            die "bundle catalog is unavailable or has not been published"
         fi
     fi
     [[ -n "$BUNDLE_VERSION" ]] || \

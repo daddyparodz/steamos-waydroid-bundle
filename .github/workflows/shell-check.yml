@@ -1,0 +1,63 @@
+name: Shell checks
+
+on:
+  pull_request:
+    branches:
+      - main
+      - testing
+  push:
+    branches:
+      - main
+      - testing
+
+permissions:
+  contents: read
+
+jobs:
+  shell-validation:
+    name: Shell validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck shfmt
+
+      - name: Check Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r -d '' script; do
+            echo "Checking syntax: $script"
+            bash -n "$script"
+          done < <(
+            find . -type f -name '*.sh' \
+              -not -path './.git/*' \
+              -print0
+          )
+
+      - name: Run ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' scripts < <(
+            find . -type f -name '*.sh' \
+              -not -path './.git/*' \
+              -print0
+          )
+
+          if ((${#scripts[@]})); then
+            shellcheck "${scripts[@]}"
+          fi
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          shfmt -d .

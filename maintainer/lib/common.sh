@@ -122,7 +122,8 @@ resolve_bundle_version() {
     selected_fingerprint="$TARGET_FINGERPRINT_FILE"
     if [[ "$BUNDLE_VERSION" == auto ]]; then
         [[ -r "$selected_fingerprint" ]] || \
-            die "target fingerprint missing; sync a SteamOS target first"        # shellcheck source=target-fingerprint.sh
+            die "target fingerprint missing; sync a SteamOS target first"        
+        # shellcheck source=target-fingerprint.sh
         source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
         BUNDLE_VERSION="$(fingerprint_value \
             "$selected_fingerprint" SUGGESTED_BUNDLE_VERSION)"

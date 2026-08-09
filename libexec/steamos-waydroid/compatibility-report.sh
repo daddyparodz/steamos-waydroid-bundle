@@ -44,17 +44,31 @@ current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
 
 {
     printf '# SteamOS Waydroid compatibility report\n\n'
+    # Literal backticks are Markdown; substitutions are printf arguments.
+    # shellcheck disable=SC2016
     printf -- '- Generated (UTC): `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # Literal backticks are Markdown; substitutions are printf arguments.
+    # shellcheck disable=SC2016
     printf -- '- Host: `%s`\n' "$(hostname)"
+    # Literal backticks are Markdown; substitutions are printf arguments.
+    # shellcheck disable=SC2016
     printf -- '- Bundle: `%s`\n\n' "$(basename -- "$(readlink -f "$BUNDLE_ROOT")")"
+    
     printf '| Check | Bundle target | Current Deck | Match |\n'
     printf '|---|---|---|---|\n'
+    
+    # Literal backticks are Markdown; substitutions are printf arguments.
+    # shellcheck disable=SC2016
     printf '| SteamOS version | `%s` | `%s` | %s |\n' \
         "$expected_version" "$current_version" \
         "$([[ "$expected_version" == "$current_version" ]] && printf yes || printf no)"
+    # Literal backticks are Markdown; substitutions are printf arguments.
+    # shellcheck disable=SC2016
     printf '| SteamOS build | `%s` | `%s` | %s |\n' \
         "$expected_build" "$current_build" \
         "$([[ "$expected_build" == "$current_build" ]] && printf yes || printf no)"
+    # Literal backticks are Markdown; substitutions are printf arguments.
+    # shellcheck disable=SC2016
     printf '| Compatibility hash | `%s` | `%s` | %s |\n\n' \
         "$expected_abi" "$current_abi" \
         "$([[ "$expected_abi" == "$current_abi" ]] && printf yes || printf no)"
@@ -65,6 +79,8 @@ current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
         [[ "$key" == PKG_* ]] || continue
         current_value="$(fingerprint_value "$CURRENT" "$key")"
         if [[ "$expected_value" != "$current_value" ]]; then
+            # Literal backticks are Markdown; substitutions are printf arguments.
+            # shellcheck disable=SC2016
             printf -- '- `%s`: bundle `%s`; Deck `%s`\n' \
                 "${key#PKG_}" "$expected_value" "${current_value:-missing}"
             differences=$((differences + 1))

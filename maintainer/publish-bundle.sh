@@ -9,6 +9,31 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=../libexec/steamos-waydroid/lib/target-fingerprint.sh
 source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
 
+PROMOTE=false
+
+while (($#)); do
+    case "$1" in
+        --promote)
+            PROMOTE=true
+            ;;
+        -h|--help)
+            cat <<'EOF'
+Usage: publish-bundle.sh [--promote]
+
+Publish the selected bundle.
+
+The first bundle published for a target automatically becomes preferred.
+Later bundles do not replace the preferred bundle unless --promote is used.
+EOF
+            exit 0
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
+    shift
+done
+
 require_non_root
 for command_name in git sha256sum tar; do
     require_command "$command_name"
@@ -16,8 +41,11 @@ done
 
 resolve_bundle_version
 
-[[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]] || \
-    die "commit the package recipes and build changes before publishing"
+# allow publish if forced
+if [[ "${ALLOW_DIRTY_PUBLISH:-0}" != 1 ]]; then
+    [[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]] || \
+        die "commit the package recipes and build changes before publishing, or set ALLOW_DIRTY_PUBLISH=1 for testing"
+fi
 
 [[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "BUNDLE_VERSION may contain only letters, numbers, dots, underscores, and hyphens"
@@ -87,8 +115,49 @@ for candidate_manifest in "$PUBLISH_ROOT"/*.manifest; do
         printf '%s|%s\n' "$candidate_target" "$candidate_version" >> "$CATALOG_ENTRIES"
     fi
 done
-# Ensure this invocation wins when several revisions exist for one target.
-printf '%s|%s\n' "$TARGET_ENVIRONMENT_ID" "$BUNDLE_VERSION" >> "$CATALOG_ENTRIES"
+
+existing_bundle=""
+
+if [[ -r "$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME" ]]; then
+    existing_bundle="$(
+        awk -F '[=|]' -v target="$TARGET_ENVIRONMENT_ID" \
+            '$1 == "target" && $2 == target {print $3; exit}' \
+            "$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME"
+    )"
+fi
+
+# if this is the first bundle published, make it the target
+# otherwise only promote to target if told to do so
+if [[ -z "$existing_bundle" ]]; then
+    printf 'No preferred bundle exists for this target.\n'
+    printf 'Selecting initial preferred bundle:\n'
+    printf '  %s\n' "$BUNDLE_VERSION"
+
+    printf '%s|%s\n' \
+        "$TARGET_ENVIRONMENT_ID" \
+        "$BUNDLE_VERSION" \
+        >> "$CATALOG_ENTRIES"
+
+elif [[ "$existing_bundle" == "$BUNDLE_VERSION" ]]; then
+    printf 'Bundle is already preferred for this target:\n'
+    printf '  %s\n' "$BUNDLE_VERSION"
+
+elif $PROMOTE; then
+    printf 'Promoting preferred bundle:\n'
+    printf '  previous: %s\n' "$existing_bundle"
+    printf '  new:      %s\n' "$BUNDLE_VERSION"
+
+    printf '%s|%s\n' \
+        "$TARGET_ENVIRONMENT_ID" \
+        "$BUNDLE_VERSION" \
+        >> "$CATALOG_ENTRIES"
+
+else
+    printf 'Preferred bundle remains:\n'
+    printf '  %s\n' "$existing_bundle"
+    printf 'Publishing without promotion:\n'
+    printf '  %s\n' "$BUNDLE_VERSION"
+fi
 {
     printf 'format=1\n'
     awk -F '|' '{selected[$1]=$2} END {for (target in selected) print target "|" selected[target]}' \

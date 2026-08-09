@@ -47,6 +47,8 @@ sudo systemd-nspawn \
     --bind="$OUTPUT_ROOT:/work/out" \
     --bind-ro="$TARGET_FINGERPRINT_FILE:/work/target-fingerprint.env" \
     --setenv="BUNDLE_VERSION=$BUNDLE_VERSION" \
+    --setenv="WLROOTS_VERSION=$WLROOTS_VERSION" \
+    --setenv="CAGE_VERSION=$CAGE_VERSION" \
     --setenv="TARGET_FINGERPRINT_FILE=/work/target-fingerprint.env" \
     --setenv="REPORT_ROOT=/work/out/reports" \
     --setenv="HOST_UID=$(id -u)" \

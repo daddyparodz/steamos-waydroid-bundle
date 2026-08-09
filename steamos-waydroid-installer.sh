@@ -1,8 +1,10 @@
 #!/bin/bash
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# This script sets the SCRIPT_DIR variable to the directory where the script resides and then changes the working directory to that location.
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 cd "$SCRIPT_DIR" || exit 1
 
+# This section sets up different modes for managing Waydroid on SteamOS using command-line arguments.
 REPAIR_MODE=false
 CONFIGURE_ARTIFACTS=false
 UNINSTALL_MODE=false
@@ -13,7 +15,15 @@ REINSTALL_ANDROID_MODE=false
 AUTO_REPAIR_MODE=false
 ANDROID_REINSTALL_HAS_EXISTING=false
 usage () {
-	echo "usage: $0 [--repair | --reinstall-android | --configure-artifacts | --uninstall | --purge-android | --uninstall-all | --reset-host-keep-android]" >&2
+	echo "Usage: $0 [OPTION]" >&2
+	echo "Options:" >&2
+	echo "  --repair                   Repairs the current installation of Waydroid." >&2
+	echo "  --reinstall-android        Reinstalls the Android system on Waydroid." >&2
+	echo "  --configure-artifacts      Configures additional artifacts for selecting a bundle." >&2
+	echo "  --uninstall                Uninstalls Waydroid from SteamOS." >&2
+	echo "  --purge-android            Purges all Android data and configurations." >&2
+	echo "  --uninstall-all            Performs a full uninstall, including configuration files." >&2
+	echo "  --reset-host-keep-android  Completely resets the host system while keeping Android data intact." >&2
 }
 if [ "$#" -gt 1 ]
 then
@@ -59,9 +69,12 @@ then
 fi
 # shellcheck source=/dev/null
 source /etc/os-release
+
+# following variables are used in externally sourced functions
 STEAMOS_VERSION_ID=${VERSION_ID:-unknown}
 STEAMOS_BUILD_ID=${BUILD_ID:-unknown}
 STEAMOS_BRANCH=$(steamos-select-branch -c 2> /dev/null || true)
+
 WORKING_DIR=$SCRIPT_DIR
 DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
 DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
@@ -182,7 +195,7 @@ HOST_PACKAGE_ROOT=$ACTIVE_BUNDLE/packages
 # android TV builds
 ANDROID13_TV_OTA=https://ota.supechicken666.dev
 
-echo script version: $SCRIPT_VERSION_SHA
+echo "script version: $SCRIPT_VERSION_SHA"
 if [ "$REPAIR_MODE" = true ]
 then
 	echo Mode: repair existing installation
@@ -226,7 +239,7 @@ if [ ! -x "$BUNDLED_CAGE" ] || [ ! -x "$BUNDLED_WLR_RANDR" ] || \
 	[ ! -f "$ACTIVE_BUNDLE/.verified" ]
 then
 	echo Target-built bundle is missing or unverified.
-	echo Expected bundle: $ACTIVE_BUNDLE
+	echo "Expected bundle: $ACTIVE_BUNDLE"
 	echo Run the installer again and inspect the bundle-selection error.
 	exit 1
 fi
@@ -437,45 +450,46 @@ then
 	echo This can take a few minutes depending on the speed of the internet connection and if github is having issues.
 	echo If the git clone is slow - cancel the script \(CTL-C\) and run it again.
 
-	git clone --depth=1 $WAYDROID_SCRIPT $WAYDROID_SCRIPT_DIR &> /dev/null
-	if [ $? -eq 0 ]
-	then
-		echo Repo has been successfully cloned! Proceed to the next step.
+	if git clone --depth=1 "$WAYDROID_SCRIPT" "$WAYDROID_SCRIPT_DIR" &> /dev/null; then
+    	echo Repo has been successfully cloned! Proceed to the next step.
 	else
-		echo Error cloning the casualsnek / aleasto waydroid_script repo!
-		rm -rf $WAYDROID_SCRIPT_DIR
-		abort_run
+	    echo Error cloning the casualsnek / aleasto waydroid_script repo!
+	    rm -rf "$WAYDROID_SCRIPT_DIR"
+	    abort_run
 	fi
 fi
 
 # unlock the readonly and initialize keyring using the devmode method
 echo Unlocking SteamOS and initializing keyring via steamos-devmode. This can take a while.
-echo "*** steamos-devmode ***" &> $LOGFILE
-echo -e "$current_password\n" | sudo -S steamos-devmode enable --no-prompt &>> $LOGFILE
+echo "*** steamos-devmode ***" > "$LOGFILE"
 
-if [ $? -eq 0 ]
+if { printf '%s\n' "$current_password" |
+    sudo -S steamos-devmode enable --no-prompt; } >> "$LOGFILE" 2>&1
 then
-	echo pacman keyring has been initialized!
+    echo pacman keyring has been initialized!
 else
-	echo Error initializing keyring!
-	abort_run
+    echo Error initializing keyring!
+    abort_run
 fi
 
 # Install the target-built Waydroid host package set from the verified bundle.
 echo Installing waydroid packages. This can take a while.
-echo "*** pacman install waydroid packages ***" &>> $LOGFILE
-cd $WORKING_DIR
-echo -e "$current_password\n" | sudo -S pacman -U --noconfirm \
-	"$HOST_PACKAGE_ROOT"/libglibutil*.zst "$HOST_PACKAGE_ROOT"/libgbinder*.zst \
-	"$HOST_PACKAGE_ROOT"/python-gbinder*.zst "$HOST_PACKAGE_ROOT"/waydroid*.zst &>> $LOGFILE
+echo "*** pacman install waydroid packages ***" >> "$LOGFILE"
+cd "$WORKING_DIR" || abort_run
 
-if [ $? -eq 0 ]
+if { printf '%s\n' "$current_password" |
+    sudo -S pacman -U --noconfirm \
+        "$HOST_PACKAGE_ROOT"/libglibutil*.zst \
+        "$HOST_PACKAGE_ROOT"/libgbinder*.zst \
+        "$HOST_PACKAGE_ROOT"/python-gbinder*.zst \
+        "$HOST_PACKAGE_ROOT"/waydroid*.zst; } >> "$LOGFILE" 2>&1
 then
-	echo Waydroid has been installed!
-	echo -e "$current_password\n" | sudo -S systemctl disable waydroid-container.service
+    echo Waydroid has been installed!
+    printf '%s\n' "$current_password" |
+        sudo -S systemctl disable waydroid-container.service
 else
-	echo Error installing waydroid. Run the script again to install waydroid.
-	abort_run
+    echo Error installing waydroid. Run the script again to install waydroid.
+    abort_run
 fi
 
 # firewall config for waydroid0 interface to forward packets for internet to work

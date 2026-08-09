@@ -91,21 +91,33 @@ BUNDLE_PREFIX="${BUNDLE_PREFIX:-/opt/steamos-waydroid-build}"
 BUNDLE_ROOT="$OUTPUT_ROOT/$BUNDLE_VERSION"
 STAGING_ROOT="$OUTPUT_ROOT/.$BUNDLE_VERSION.staging"
 
-CAGE_VERSION="v0.2.0"
-WLR_RANDR_VERSION="v0.5.0"
+# CAGE version is now supplied by common.sh
+WLR_RANDR_VERSION="${WLR_RANDR_VERSION:-v0.5.0}"
 
 clone_at_tag() {
     local url="$1"
     local tag="$2"
     local destination="$3"
+    local current_commit expected_commit
 
     if [[ ! -d "$destination/.git" ]]; then
         git clone --depth=1 --branch "$tag" "$url" "$destination"
+    else
+        if ! git -C "$destination" rev-parse \
+            --verify --quiet "refs/tags/$tag^{commit}" >/dev/null; then
+            printf 'Fetching %s for %s...\n' "$tag" "$destination"
+            git -C "$destination" fetch \
+                --depth=1 \
+                origin \
+                "refs/tags/$tag:refs/tags/$tag"
+        fi
+
+        git -C "$destination" checkout --detach "$tag"
     fi
 
-    local current_commit expected_commit
     current_commit="$(git -C "$destination" rev-parse HEAD)"
     expected_commit="$(git -C "$destination" rev-list -n 1 "$tag")"
+
     [[ "$current_commit" == "$expected_commit" ]] || \
         die "$destination is not checked out at $tag"
 }
@@ -173,7 +185,7 @@ meson compile -C "$SOURCE_ROOT/wlroots/build-bundle"
 meson install -C "$SOURCE_ROOT/wlroots/build-bundle"
 
 WLROOTS_LIBRARY="$(find "$BUNDLE_PREFIX/lib" -maxdepth 1 \
-    -type f -name 'libwlroots-0.18.so*' -print -quit)"
+    -type f -name "libwlroots-${WLROOTS_API_VERSION}.so*" -print -quit)"
 [[ -n "$WLROOTS_LIBRARY" ]] || die "bundled wlroots library was not installed"
 
 readelf -d "$WLROOTS_LIBRARY" | grep -F 'libdisplay-info.so.3' >/dev/null || \
@@ -224,7 +236,7 @@ install -d \
     "$STAGING_ROOT/tools"
 install -m 0755 "$BUNDLE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
 install -m 0755 "$BUNDLE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
-cp -a "$BUNDLE_PREFIX"/lib/libwlroots-0.18.so* "$STAGING_ROOT/lib/"
+cp -a "$BUNDLE_PREFIX"/lib/"libwlroots-${WLROOTS_API_VERSION}.so"* "$STAGING_ROOT/lib/"
 cp -a "$OUTPUT_ROOT/.host-packages-$BUNDLE_VERSION"/. "$STAGING_ROOT/packages/"
 install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env"
 install -m 0755 \

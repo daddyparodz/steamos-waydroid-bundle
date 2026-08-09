@@ -19,7 +19,13 @@ fi
 BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-$HOME/steamos-waydroid-build/public}"
 BUNDLE_VERSION="${CALLER_BUNDLE_VERSION:-${BUNDLE_VERSION:-auto}}"
 BUNDLE_REVISION="${BUNDLE_REVISION:-r2}"
+# WLROOTS version maybe updated in newer versions of steamos
 WLROOTS_VERSION="${WLROOTS_VERSION:-0.18.2}"
+# add api version to replace hard coded "0.18" references in code
+WLROOTS_API_VERSION="${WLROOTS_VERSION%.*}"
+# if WLROOTS changes, cage will also need updating
+CAGE_VERSION="${CAGE_VERSION:-v0.2.0}"
+
 PUBLISH_ROOT="${PUBLISH_ROOT:-$BUILD_WORK_ROOT/publish}"
 TARGET_FINGERPRINT_FILE="${TARGET_FINGERPRINT_FILE:-$BUILD_WORK_ROOT/target-fingerprint.env}"
 TARGETS_ROOT="${TARGETS_ROOT:-$BUILD_WORK_ROOT/targets}"
@@ -116,8 +122,7 @@ resolve_bundle_version() {
     selected_fingerprint="$TARGET_FINGERPRINT_FILE"
     if [[ "$BUNDLE_VERSION" == auto ]]; then
         [[ -r "$selected_fingerprint" ]] || \
-            die "target fingerprint missing; run maintainer/sync-steamos-rootfs.sh first"
-        # shellcheck source=target-fingerprint.sh
+            die "target fingerprint missing; sync a SteamOS target first"        # shellcheck source=target-fingerprint.sh
         source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
         BUNDLE_VERSION="$(fingerprint_value \
             "$selected_fingerprint" SUGGESTED_BUNDLE_VERSION)"

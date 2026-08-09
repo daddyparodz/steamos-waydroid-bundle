@@ -93,7 +93,7 @@ host_python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.
 
 mapfile -t wlroots_libraries < <(
     find "$BUNDLE_ROOT/lib" -maxdepth 1 \
-        \( -type f -o -type l \) -name 'libwlroots-0.18.so*' -print
+        \( -type f -o -type l \) -name 'libwlroots-*.so*' -print
 )
 (( ${#wlroots_libraries[@]} > 0 )) || die "bundled wlroots is missing"
 
@@ -123,7 +123,7 @@ if ldd "$BUNDLE_ROOT/bin/cage" | grep -F 'not found' >/dev/null; then
 fi
 
 resolved_wlroots="$(ldd "$BUNDLE_ROOT/bin/cage" | \
-    awk '/libwlroots-0.18/{print $3; exit}')"
+    awk '/libwlroots-[0-9]+\.[0-9]+\.so/{print $3; exit}')"
 [[ -n "$resolved_wlroots" ]] || die "Cage did not report a resolved wlroots path"
 resolved_wlroots="$(realpath -e -- "$resolved_wlroots")"
 bundle_library_root="$(realpath -e -- "$BUNDLE_ROOT/lib")"

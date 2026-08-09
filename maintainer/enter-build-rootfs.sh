@@ -14,19 +14,19 @@ require_command sudo
 resolve_bundle_version
 
 [[ -n "$TARGET_WORK_ROOT" ]] || \
-    die "target build environment missing; rerun maintainer/sync-steamos-rootfs.sh"
+    die "target build environment missing; run maintainer/sync-steamos-image-rootfs.sh or maintainer/sync-steamos-rootfs.sh"
 ROOTFS_ROOT="$TARGET_WORK_ROOT/rootfs"
 SOURCE_ROOT="$BUILD_WORK_ROOT/src"
 OUTPUT_ROOT="$BUILD_WORK_ROOT/out"
 
 [[ -x "$ROOTFS_ROOT/usr/bin/bash" ]] || \
-    die "SteamOS rootfs not found; run maintainer/sync-steamos-rootfs.sh first"
+    die "SteamOS rootfs not found; run a SteamOS rootfs sync first"
 [[ $(stat -c '%u:%g' "$ROOTFS_ROOT") == 0:0 ]] || \
-    die "SteamOS rootfs must be owned by root; rerun maintainer/sync-steamos-rootfs.sh"
+    die "SteamOS rootfs must be owned by root; rerun the rootfs sync"
 [[ -r "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" ]] && \
     grep -Fx 'STEAMOS_WAYDROID_COPIED_BUILD_ROOT=1' \
         "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" > /dev/null || \
-    die "copied-build-root marker is missing; rerun maintainer/sync-steamos-rootfs.sh"
+    die "copied-build-root marker is missing; rerun the rootfs sync"
 
 mkdir -p "$SOURCE_ROOT" "$OUTPUT_ROOT"
 

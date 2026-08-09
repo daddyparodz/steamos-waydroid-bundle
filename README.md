@@ -25,10 +25,15 @@ settings, files, or login sessions.
 
 ## Compatibility and safety model
 
-The installer supports SteamOS 3.8.x only when a verified bundle has been
+The installer supports a SteamOS release only when a verified bundle has been
 published for the Deck's exact target fingerprint. The fingerprint includes
 the SteamOS release and build plus relevant compiler, runtime, Python, Wayland,
 graphics, input, and system-library versions.
+
+Published support is therefore determined by the available target bundle
+catalog rather than by the SteamOS version number alone. Development and
+`main`-branch SteamOS builds remain experimental and require an exact matching
+published bundle.
 
 Before requesting sudo access, the installer:
 
@@ -48,15 +53,17 @@ artifact source or another source you control and trust.
 
 ## Requirements
 
-- Steam Deck running a supported SteamOS 3.8.x stable or beta release;
+- Steam Deck running a SteamOS release for which an exact verified target
+  bundle has been published;
 - an exact published target bundle for that SteamOS userspace;
 - Desktop Mode with a working graphical session;
 - a sudo password for the `deck` user;
 - at least 10 GB free under the home filesystem for a new Android install;
 - internet access for source, bundle, and Android-image downloads.
 
-The SteamOS `main` branch is experimental. The installer displays an explicit
-warning there, and an exact target bundle is still mandatory.
+SteamOS development and `main` branches are experimental. The installer
+displays an explicit warning there, and an exact target bundle is still
+mandatory.
 
 ## Install
 
@@ -125,16 +132,16 @@ deployment, or follow the maintainer build procedure.
 
 ## Commands
 
-| Command | Behaviour |
-| --- | --- |
-| `./steamos-waydroid-installer.sh` | Fresh install when no image exists; otherwise automatic protected repair. |
-| `./steamos-waydroid-installer.sh --repair` | Explicitly require the protected existing-image repair path. |
-| `./steamos-waydroid-installer.sh --reinstall-android` | Deliberately create a new Android instance after typed confirmation. Existing image and user state are archived first. |
-| `./steamos-waydroid-installer.sh --configure-artifacts` | Replace the Deck's bundle source through the advanced configuration wizard. |
-| `./steamos-waydroid-installer.sh --uninstall` | Remove host integration while retaining Android state, the checkout, installed bundles, and artifact configuration. |
-| `./steamos-waydroid-installer.sh --purge-android` | Delete Android state and reinstall archives while retaining the checkout and verified bundles. |
+| Command                                                       | Behaviour                                                                                                                                           |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./steamos-waydroid-installer.sh`                           | Fresh install when no image exists; otherwise automatic protected repair.                                                                           |
+| `./steamos-waydroid-installer.sh --repair`                  | Explicitly require the protected existing-image repair path.                                                                                        |
+| `./steamos-waydroid-installer.sh --reinstall-android`       | Deliberately create a new Android instance after typed confirmation. Existing image and user state are archived first.                              |
+| `./steamos-waydroid-installer.sh --configure-artifacts`     | Replace the Deck's bundle source through the advanced configuration wizard.                                                                         |
+| `./steamos-waydroid-installer.sh --uninstall`               | Remove host integration while retaining Android state, the checkout, installed bundles, and artifact configuration.                                 |
+| `./steamos-waydroid-installer.sh --purge-android`           | Delete Android state and reinstall archives while retaining the checkout and verified bundles.                                                      |
 | `./steamos-waydroid-installer.sh --reset-host-keep-android` | Remove host integration, bundles, artifact configuration, and reports while retaining Android state and the checkout. Useful for first-run testing. |
-| `./steamos-waydroid-installer.sh --uninstall-all` | Delete Android state, host integration, bundles, and the Deck-side checkout after typed confirmation. |
+| `./steamos-waydroid-installer.sh --uninstall-all`           | Delete Android state, host integration, bundles, and the Deck-side checkout after typed confirmation.                                               |
 
 Destructive modes explain their scope and require an exact typed phrase. The
 script never stops or restarts Steam. If Steam is running, uninstall and reset
@@ -230,7 +237,7 @@ When reporting a problem, include:
 
 Do not post passwords, authentication tokens, private SSH configuration, or
 home-network addresses. File issues at
-<https://github.com/pjohno/steamos-waydroid-bundle/issues>.
+[https://github.com/pjohno/steamos-waydroid-bundle/issues](https://github.com/pjohno/steamos-waydroid-bundle/issues).
 
 ## Maintainers
 
@@ -238,6 +245,16 @@ Normal Deck users should run only `steamos-waydroid-installer.sh`. Helpers
 under `libexec/` are internal entry points. Reproducible target capture, build,
 publication, reset, and diagnostic procedures are documented in the
 [maintainer guide](maintainer/README.md).
+
+Maintainers can create a build root either from an official Valve SteamOS image
+or from a live Steam Deck. The image-based path allows Stable, Beta, Preview,
+and Main builds to be prepared without booting that SteamOS build on a Deck.
+
+Multiple bundle builds may exist for the same exact SteamOS target fingerprint.
+The first published bundle for a target becomes its preferred `auto` bundle.
+Later experimental bundles can be published side-by-side without changing that
+selection; promotion to the preferred target is explicit through the maintainer
+publishing workflow.
 
 Public bundles must be built from a committed revision available in this
 repository. Their manifests record that exact source revision and target

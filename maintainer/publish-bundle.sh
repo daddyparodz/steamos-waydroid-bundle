@@ -10,7 +10,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
 
 PROMOTE=false
-
 while (($#)); do
     case "$1" in
         --promote)
@@ -41,7 +40,6 @@ done
 
 resolve_bundle_version
 
-# allow publish if forced
 if [[ "${ALLOW_DIRTY_PUBLISH:-0}" != 1 ]]; then
     [[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]] || \
         die "commit the package recipes and build changes before publishing, or set ALLOW_DIRTY_PUBLISH=1 for testing"
@@ -61,6 +59,7 @@ TARGETS_MANIFEST_NAME="targets.manifest"
 [[ -f "$BUNDLE_ROOT/.verified" ]] || die "bundle has no verification marker"
 
 mkdir -p "$PUBLISH_ROOT"
+
 for published_file in "$ARCHIVE_NAME" "$HASH_NAME" "$MANIFEST_NAME"; do
     [[ ! -e "$PUBLISH_ROOT/$published_file" ]] || \
         die "published artifact already exists: $PUBLISH_ROOT/$published_file"
@@ -86,6 +85,7 @@ tar -C "$BUILD_WORK_ROOT/out" \
 
 SOURCE_REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 ARCHIVE_SHA256="$(sha256sum "$STAGING_ROOT/$ARCHIVE_NAME" | awk '{print $1}')"
+
 cat > "$STAGING_ROOT/$MANIFEST_NAME" <<EOF
 format=1
 bundle_version=$BUNDLE_VERSION
@@ -93,24 +93,26 @@ source_revision=$SOURCE_REVISION
 archive=$ARCHIVE_NAME
 sha256=$ARCHIVE_SHA256
 EOF
+
 cat "$BUNDLE_ROOT/target-fingerprint.env" >> "$STAGING_ROOT/$MANIFEST_NAME"
 cp "$STAGING_ROOT/$MANIFEST_NAME" "$STAGING_ROOT/$LATEST_MANIFEST_NAME"
 
-# Maintain a mutable target index alongside the immutable artifacts. There is
-# one preferred bundle per exact SteamOS target; already-published artifacts
-# remain available when an older SteamOS image is restored.
 TARGET_ENVIRONMENT_ID="$(fingerprint_value \
     "$BUNDLE_ROOT/target-fingerprint.env" TARGET_ENVIRONMENT_ID)"
 [[ -n "$TARGET_ENVIRONMENT_ID" ]] || die "bundle target environment ID is missing"
+
 CATALOG_ENTRIES="$STAGING_ROOT/targets.entries"
+
 for candidate_manifest in "$PUBLISH_ROOT"/*.manifest; do
     [[ -r "$candidate_manifest" ]] || continue
     case "$(basename -- "$candidate_manifest")" in
         latest.manifest|targets.manifest) continue ;;
     esac
+
     candidate_target="$(fingerprint_value \
         "$candidate_manifest" TARGET_ENVIRONMENT_ID)"
     candidate_version="$(fingerprint_value "$candidate_manifest" bundle_version)"
+
     if [[ -n "$candidate_target" && "$candidate_version" =~ ^[A-Za-z0-9._-]+$ ]]; then
         printf '%s|%s\n' "$candidate_target" "$candidate_version" >> "$CATALOG_ENTRIES"
     fi
@@ -126,52 +128,55 @@ if [[ -r "$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME" ]]; then
     )"
 fi
 
-# if this is the first bundle published, make it the target
-# otherwise only promote to target if told to do so
 if [[ -z "$existing_bundle" ]]; then
+    preferred_bundle="$BUNDLE_VERSION"
+
     printf 'No preferred bundle exists for this target.\n'
     printf 'Selecting initial preferred bundle:\n'
-    printf '  %s\n' "$BUNDLE_VERSION"
-
-    printf '%s|%s\n' \
-        "$TARGET_ENVIRONMENT_ID" \
-        "$BUNDLE_VERSION" \
-        >> "$CATALOG_ENTRIES"
+    printf '  %s\n' "$preferred_bundle"
 
 elif [[ "$existing_bundle" == "$BUNDLE_VERSION" ]]; then
+    preferred_bundle="$existing_bundle"
+
     printf 'Bundle is already preferred for this target:\n'
-    printf '  %s\n' "$BUNDLE_VERSION"
+    printf '  %s\n' "$preferred_bundle"
 
 elif $PROMOTE; then
+    preferred_bundle="$BUNDLE_VERSION"
+
     printf 'Promoting preferred bundle:\n'
     printf '  previous: %s\n' "$existing_bundle"
-    printf '  new:      %s\n' "$BUNDLE_VERSION"
-
-    printf '%s|%s\n' \
-        "$TARGET_ENVIRONMENT_ID" \
-        "$BUNDLE_VERSION" \
-        >> "$CATALOG_ENTRIES"
+    printf '  new:      %s\n' "$preferred_bundle"
 
 else
+    preferred_bundle="$existing_bundle"
+
     printf 'Preferred bundle remains:\n'
-    printf '  %s\n' "$existing_bundle"
+    printf '  %s\n' "$preferred_bundle"
     printf 'Publishing without promotion:\n'
     printf '  %s\n' "$BUNDLE_VERSION"
 fi
+
+printf '%s|%s\n' \
+    "$TARGET_ENVIRONMENT_ID" \
+    "$preferred_bundle" \
+    >> "$CATALOG_ENTRIES"
+
 {
     printf 'format=1\n'
-    awk -F '|' '{selected[$1]=$2} END {for (target in selected) print target "|" selected[target]}' \
-        "$CATALOG_ENTRIES" | sort | sed 's/^/target=/'
+    awk -F '|' \
+        '{selected[$1]=$2} END {for (target in selected) print target "|" selected[target]}' \
+        "$CATALOG_ENTRIES" |
+        sort |
+        sed 's/^/target=/'
 } > "$STAGING_ROOT/$TARGETS_MANIFEST_NAME"
 
-# Publish immutable files first and mutable pointers last. All files have
-# already been prepared, so a catalog-generation failure cannot strand an
-# immutable artifact without a target index entry.
 mv \
     "$STAGING_ROOT/$ARCHIVE_NAME" \
     "$STAGING_ROOT/$HASH_NAME" \
     "$STAGING_ROOT/$MANIFEST_NAME" \
     "$PUBLISH_ROOT/"
+
 mv -f \
     "$STAGING_ROOT/$LATEST_MANIFEST_NAME" \
     "$STAGING_ROOT/$TARGETS_MANIFEST_NAME" \

@@ -1,5 +1,33 @@
 #!/bin/bash
 
+find_waydroid_installer () {
+	local installer_root installer_path
+
+	if [ -r "$HOME/Android_Waydroid/installer-root" ]
+	then
+		IFS= read -r installer_root < "$HOME/Android_Waydroid/installer-root"
+		installer_path="$installer_root/steamos-waydroid-installer.sh"
+		if [ -x "$installer_path" ] && \
+			[ -x "$installer_root/libexec/steamos-waydroid/uninstall.sh" ]
+		then
+			printf '%s\n' "$installer_path"
+			return 0
+		fi
+	fi
+
+	# Compatibility with installations created before installer-root was
+	# recorded. This is the checkout location documented in README.md.
+	installer_path="$HOME/steamos-waydroid-bundle/steamos-waydroid-installer.sh"
+	if [ -x "$installer_path" ] && \
+		[ -x "$HOME/steamos-waydroid-bundle/libexec/steamos-waydroid/uninstall.sh" ]
+	then
+		printf '%s\n' "$installer_path"
+		return 0
+	fi
+
+	return 1
+}
+
 PASSWORD=$(zenity --password --title "sudo Password Authentication")
 echo -e "$PASSWORD\n" | sudo -S ls &> /dev/null
 if [ $? -ne 0 ]
@@ -188,71 +216,48 @@ then
 elif [ "$Choice" == "UNINSTALL" ]
 then
 UNINSTALL_Choice=$(zenity --width 600 --height 220 --list --radiolist --multiple --title "Waydroid Toolbox" --column "Select One" --column "Option" --column="Description - Read this carefully!"\
-	FALSE WAYDROID "Uninstall Waydroid but keep the Android user data."\
-	FALSE FULL "Uninstall Waydroid and delete the Android user data."\
+	FALSE WAYDROID "Remove host integration but preserve the Android image, applications, settings and logins."\
+	FALSE PURGE "Remove host integration and permanently delete all Android data."\
 	TRUE MENU "***** Go back to Waydroid Toolbox Main Menu *****")
 	if [ $? -eq 1 ] || [ "$UNINSTALL_Choice" == "MENU" ]
 	then
 		echo User pressed CANCEL. Going back to main menu.
 
-	elif [ "$UNINSTALL_Choice" == "WAYDROID" ]
+	elif [ "$UNINSTALL_Choice" == "WAYDROID" ] || [ "$UNINSTALL_Choice" == "PURGE" ]
 	then
-		# disable the steamos readonly
-		echo -e $PASSWORD\n | sudo -S steamos-readonly disable
-	
-		# remove the Waydroid packages installed by this project
-		echo -e "$PASSWORD\n" | sudo -S systemctl stop waydroid-container
-		echo -e "$PASSWORD\n" | sudo -S pacman -R --noconfirm libglibutil libgbinder python-gbinder waydroid
-	
-		# delete the waydroid directories and config
-		echo -e "$PASSWORD\n" | sudo -S rm -rf ~/waydroid /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra ~/AUR
-	
-		# delete waydroid config and scripts
-		echo -e "$PASSWORD\n" | sudo -S rm /etc/sudoers.d/zzzzzzzz-waydroid \
-			/usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts \
-			/usr/bin/waydroid-mount /usr/bin/waydroid-firewall
-	
-		# delete Waydroid Toolbox symlink
-		rm ~/Desktop/Waydroid-Toolbox
-	
-		# delete contents of ~/Android_Waydroid
-		rm -rf ~/Android_Waydroid/
-	
-		# re-enable the steamos readonly
-		echo -e "$PASSWORD\n" | sudo -S steamos-readonly enable
-	
-		zenity --warning --title "Waydroid Toolbox" --text "Waydroid has been uninstalled! Goodbye!" --width 600 --height 75
-		exit
-		
-	elif [ "$UNINSTALL_Choice" == "FULL" ]
-	then
-		# disable the steamos readonly
-		echo -e "$PASSWORD\n" | sudo -S steamos-readonly disable
-		
-		# remove the Waydroid packages installed by this project
-		echo -e "$PASSWORD\n" | sudo -S systemctl stop waydroid-container
-		echo -e "$PASSWORD\n" | sudo -S pacman -R --noconfirm libglibutil libgbinder python-gbinder waydroid
-			
-		# delete the waydroid directories and config
-		echo -e $PASSWORD\n | sudo -S rm -rf ~/waydroid /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra ~/.local/share/waydroid ~/.local/share/applications/waydroid* ~/AUR
-	
-		# delete waydroid config and scripts
-		echo -e "$PASSWORD\n" | sudo -S rm /etc/sudoers.d/zzzzzzzz-waydroid \
-			/usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts \
-			/usr/bin/waydroid-mount /usr/bin/waydroid-firewall
-	
-		# delete Waydroid Toolbox and Waydroid Updatersymlink
-		rm ~/Desktop/Waydroid-Toolbox
-		rm ~/Desktop/Waydroid-Updater
-	
-		# delete contents of ~/Android_Waydroid
-		rm -rf ~/Android_Waydroid/
-	
-		# re-enable the steamos readonly
-		echo -e "$PASSWORD\n" | sudo -S steamos-readonly enable
-	
-		zenity --warning --title "Waydroid Toolbox" --text "Waydroid and Android user data has been uninstalled! Goodbye!" --width 600 --height 75
-		exit
+		if ! WAYDROID_INSTALLER=$(find_waydroid_installer)
+		then
+			zenity --error --title "Waydroid Toolbox" --width 650 --height 120 \
+				--text "The SteamOS Waydroid installer checkout could not be found.\n\nOpen Konsole in the installer checkout and run ./steamos-waydroid-installer.sh --uninstall to preserve Android, or --purge-android to delete it."
+			continue
+		fi
+
+		if [ "$UNINSTALL_Choice" == "WAYDROID" ]
+		then
+			UNINSTALL_OPTION=--uninstall
+			UNINSTALL_DESCRIPTION="Android applications, settings and logins will be preserved."
+		else
+			UNINSTALL_OPTION=--purge-android
+			UNINSTALL_DESCRIPTION="All Android applications, settings and files will be permanently deleted."
+		fi
+
+		if ! zenity --question --title "Waydroid Toolbox" --width 650 --height 120 \
+			--text "$UNINSTALL_DESCRIPTION\n\nThe protected uninstaller will open in Konsole and require an exact typed confirmation. Continue?"
+		then
+			continue
+		fi
+
+		if [ -t 0 ] && [ -t 1 ]
+		then
+			exec "$WAYDROID_INSTALLER" "$UNINSTALL_OPTION"
+		elif command -v konsole > /dev/null 2>&1
+		then
+			konsole --hold -e "$WAYDROID_INSTALLER" "$UNINSTALL_OPTION" &
+			exit 0
+		else
+			zenity --error --title "Waydroid Toolbox" --width 650 --height 120 \
+				--text "Konsole is unavailable. Open a terminal and run:\n\n$WAYDROID_INSTALLER $UNINSTALL_OPTION"
+		fi
 	fi
 fi
 done

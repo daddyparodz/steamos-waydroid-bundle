@@ -593,6 +593,14 @@ echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 # Copy Waydroid launcher dependencies.
 cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
 	extras/scripts/Waydroid-Updater.sh extras/scripts/select-bundle ~/Android_Waydroid
+# Toolbox delegates destructive reset operations back to this checkout so the
+# protected canonical uninstaller owns image preservation and confirmation.
+if ! printf '%s\n' "$WORKING_DIR" > ~/Android_Waydroid/installer-root || \
+	! chmod 0600 ~/Android_Waydroid/installer-root
+then
+	echo Failed to record the installer checkout for Waydroid Toolbox. >&2
+	abort_run
+fi
 # Remove the pre-public helper name after installing its neutral replacement.
 rm -f ~/Android_Waydroid/select-private-bundle
 for config_file in fake_wifi fake_touch

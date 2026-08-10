@@ -395,15 +395,82 @@ unmount_waydroid_var () {
 }
 
 cleanup_exit () {
+	local binder_package_was_installed=false
+	local binder_module_unload_failed=false
+	local package
+	local -a cleanup_packages=()
+
 	# Call this function to clean up after a host-installation failure.
-	
+
 	echo Something went wrong! Performing cleanup. Run the script again to install waydroid.
-	
-	# remove installed packages
+
+	# Stop Waydroid before unloading its optional out-of-tree Binder module.
 	# shellcheck disable=SC2154
-	echo -e "$current_password\n" | sudo -S pacman -R --noconfirm libglibutil libgbinder \
-		python-gbinder waydroid &> /dev/null
-	
+	printf '%s\n' "$current_password" | \
+		sudo -S systemctl stop waydroid-container.service &> /dev/null || true
+
+	if pacman -Qq steamos-waydroid-binder > /dev/null 2>&1
+	then
+		binder_package_was_installed=true
+		if lsmod | awk '$1 == "binder_linux" {found=1} END {exit !found}'
+		then
+			echo Unloading the bundled Binder kernel module.
+			if ! printf '%s\n' "$current_password" | \
+				sudo -S modprobe -r binder_linux &> /dev/null
+			then
+				binder_module_unload_failed=true
+				echo Warning: binder_linux could not be unloaded and will remain active until reboot. >&2
+			fi
+		fi
+	fi
+
+	# A failed pacman transaction may have installed only part of the package
+	# set. Remove exactly the packages which are present so one missing package
+	# cannot make the entire cleanup transaction fail.
+	for package in \
+		waydroid \
+		python-gbinder \
+		libgbinder \
+		libglibutil \
+		steamos-waydroid-binder
+	do
+		if pacman -Qq "$package" > /dev/null 2>&1
+		then
+			cleanup_packages+=("$package")
+		fi
+	done
+	if [ "${#cleanup_packages[@]}" -gt 0 ]
+	then
+		# shellcheck disable=SC2154
+		if ! printf '%s\n' "$current_password" | \
+			sudo -S pacman -Rns --noconfirm "${cleanup_packages[@]}" &> /dev/null
+		then
+			echo Warning: one or more Waydroid packages could not be removed. >&2
+		fi
+	fi
+
+	if [ "$binder_package_was_installed" = true ]
+	then
+		# Drop the removed module from modprobe's dependency index even when it
+		# could not be unloaded from the running kernel.
+		# shellcheck disable=SC2154
+		printf '%s\n' "$current_password" | \
+			sudo -S depmod -a "$(uname -r)" &> /dev/null || \
+			echo Warning: kernel module indexes could not be refreshed. >&2
+	fi
+	if pacman -Qq steamos-waydroid-binder > /dev/null 2>&1
+	then
+		if [ "$binder_module_unload_failed" = true ]
+		then
+			echo "Warning: steamos-waydroid-binder is still installed; reboot, then remove it manually." >&2
+		else
+			echo "Warning: steamos-waydroid-binder is still installed; remove it manually before retrying." >&2
+		fi
+	elif [ "$binder_module_unload_failed" = true ]
+	then
+		echo The Binder package was removed, but reboot before retrying the installer. >&2
+	fi
+
 	# unmount the custom /var/lib/waydroid
 	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &> /dev/null

@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=../libexec/steamos-waydroid/lib/target-fingerprint.sh
 source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
+# shellcheck source=lib/kernel-support.sh
+source "$SCRIPT_DIR/lib/kernel-support.sh"
 
 require_copied_build_root
 
@@ -74,8 +76,38 @@ if [[ "$version_mismatch" == true ]]; then
     die "development packages no longer match the copied SteamOS target; do not upgrade this rootfs"
 fi
 
+printf '\nChecking target kernel Binder support...\n'
+
+kernel_release="$(target_kernel_release)"
+binder_state="$(target_binder_state "$kernel_release")"
+kernel_headers_package=""
+
+printf '  Kernel release: %s\n' "$kernel_release"
+printf '  Binder support: %s\n' "$binder_state"
+
+if [[ "$binder_state" == "missing" ]]; then
+    kernel_headers_package="$(require_matching_target_kernel_headers)"
+
+    printf '  Kernel package:  %s\n' "$(target_kernel_package)"
+    printf '  Headers package: %s\n' "$kernel_headers_package"
+fi
+
 printf '\nInstalling build-only tools. Review the transaction before accepting it.\n'
-pacman -S --needed "${build_tool_packages[@]}"
+if [[ -n "$kernel_headers_package" ]]; then
+    printf '\nInstalling tools for binder module as well.\n'
+    pacman -S --needed \
+        "${build_tool_packages[@]}" \
+        "$kernel_headers_package"
+else
+    pacman -S --needed "${build_tool_packages[@]}"
+fi
+
+if [[ "$binder_state" == "missing" ]]; then
+    printf '\nVerifying target kernel build tree...\n'
+    kernel_build_dir="$(require_target_kernel_build_tree "$kernel_release")"
+    printf '  OK      %s\n' "$kernel_build_dir"
+fi
+
 require_command pkg-config
 
 printf '\nRestoring headers and pkg-config metadata omitted from SteamOS.\n'

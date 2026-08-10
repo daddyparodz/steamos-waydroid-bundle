@@ -6,6 +6,8 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/kernel-support.sh
+source "$SCRIPT_DIR/lib/kernel-support.sh"
 
 if [[ -n ${HOST_PACKAGE_LOG:-} ]]; then
     mkdir -p "$(dirname -- "$HOST_PACKAGE_LOG")"

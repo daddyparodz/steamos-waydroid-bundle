@@ -429,6 +429,21 @@ fi
 # SteamOS targets with Binder built into the kernel do not carry a Binder
 # package. Targets without Binder carry exactly one steamos-waydroid-binder
 # package containing the binder_linux module built for that target kernel.
+running_kernel_has_builtin_binder() {
+	local binder_module binder_filename modules_builtin
+
+	for binder_module in binder_linux binder; do
+		binder_filename="$(modinfo -k "$(uname -r)" -F filename "$binder_module" 2>/dev/null || true)"
+		if [ "$binder_filename" = "(builtin)" ]; then
+			return 0
+		fi
+	done
+
+	modules_builtin="/usr/lib/modules/$(uname -r)/modules.builtin"
+	[ -r "$modules_builtin" ] &&
+		grep -Eq '(^|/)(binder|binder_linux)\.ko$' "$modules_builtin"
+}
+
 echo Installing waydroid packages. This can take a while.
 echo "*** pacman install waydroid packages ***" >>"$LOGFILE"
 cd "$WORKING_DIR" || abort_run
@@ -452,7 +467,16 @@ if [ "${#binder_packages[@]}" -gt 1 ]; then
 fi
 
 binder_package_installed=false
-if [ "${#binder_packages[@]}" -eq 1 ]; then
+if running_kernel_has_builtin_binder; then
+	echo Running SteamOS kernel provides built-in Binder support.
+	binder_builtin=true
+else
+	binder_builtin=false
+fi
+
+if [ "${#binder_packages[@]}" -eq 1 ] && [ "$binder_builtin" = true ]; then
+	echo Skipping the bundled Binder package because the running kernel provides Binder itself.
+elif [ "${#binder_packages[@]}" -eq 1 ]; then
 	echo "Target bundle supplies steamos-waydroid-binder for kernel $(uname -r)."
 	host_packages+=("${binder_packages[0]}")
 	binder_package_installed=true

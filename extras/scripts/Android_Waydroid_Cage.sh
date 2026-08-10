@@ -102,6 +102,12 @@ Run the SteamOS Waydroid installer in Desktop Mode to repair the reported proble
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 
+# A running Waydroid session remains bound to the Wayland compositor that
+# started it. Stop it gracefully before waydroid-mount stops the container, so
+# the session started below will bind to Cage instead of returning immediately
+# through the stale session on the desktop compositor.
+/usr/bin/waydroid session stop >/dev/null 2>&1 || true
+
 # Mount persistent Android state before starting the container. From this point
 # onward, the EXIT trap owns cleanup, including launch failures and signals.
 if ! PREFLIGHT_OUTPUT=$(sudo /usr/bin/waydroid-mount 2>&1); then

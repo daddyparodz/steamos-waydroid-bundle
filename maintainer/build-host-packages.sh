@@ -48,8 +48,69 @@ SOURCE_CACHE="${SOURCE_ROOT:-/work/src}/host-package-sources"
 PACKAGE_WORK_ROOT="${SOURCE_ROOT:-/work/src}/host-package-work/$BUNDLE_VERSION"
 PACKAGE_OUTPUT_ROOT="${PACKAGE_OUTPUT_ROOT:-/work/out/.host-packages-$BUNDLE_VERSION}"
 
-[[ -r "$PACKAGE_RECIPE_ROOT/sources.lock" ]] || \
-    die "host package source lock is missing"
+# use waydroid 1.5.4 as tested default
+WAYDROID_STACK_LOCK="${WAYDROID_STACK_LOCK:-maintainer/packages/locks/waydroid-stack-1.5.4.lock}"
+
+if [[ "$WAYDROID_STACK_LOCK" = /* ]]; then
+    WAYDROID_STACK_LOCK_PATH="$WAYDROID_STACK_LOCK"
+else
+    WAYDROID_STACK_LOCK_PATH="$REPO_ROOT/$WAYDROID_STACK_LOCK"
+fi
+
+[[ -r "$WAYDROID_STACK_LOCK_PATH" ]] || \
+    die "Waydroid stack lock is missing: $WAYDROID_STACK_LOCK_PATH"
+
+# shellcheck disable=SC1090
+source "$WAYDROID_STACK_LOCK_PATH"
+
+[[ "${format:-}" == "1" ]] || \
+    die "unsupported Waydroid stack lock format: ${format:-missing}"
+
+for required_var in \
+    libglibutil_version \
+    libglibutil_pkgrel \
+    libglibutil_sha256 \
+    libgbinder_version \
+    libgbinder_pkgrel \
+    libgbinder_sha256 \
+    python_gbinder_version \
+    python_gbinder_pkgrel \
+    python_gbinder_sha256 \
+    waydroid_version \
+    waydroid_pkgrel \
+    waydroid_sha256
+do
+    [[ -n "${!required_var:-}" ]] || \
+        die "Waydroid stack lock is missing $required_var"
+done
+
+# check all pkgrel values are positive integers
+for pkgrel_var in \
+    libglibutil_pkgrel \
+    libgbinder_pkgrel \
+    python_gbinder_pkgrel \
+    waydroid_pkgrel
+do
+    [[ "${!pkgrel_var}" =~ ^[1-9][0-9]*$ ]] || \
+        die "invalid $pkgrel_var in Waydroid stack lock: ${!pkgrel_var}"
+done
+
+# check if patch files are given for libgbinder
+if [[ -n "${libgbinder_patch:-}" ]]; then
+    [[ -n "${libgbinder_patch_sha256:-}" ]] || \
+        die "Waydroid stack selects libgbinder patch '$libgbinder_patch' but has no libgbinder_patch_sha256"
+
+    [[ -r "$PACKAGE_RECIPE_ROOT/libgbinder/$libgbinder_patch" ]] || \
+        die "selected libgbinder patch is missing: $PACKAGE_RECIPE_ROOT/libgbinder/$libgbinder_patch"
+elif [[ -n "${libgbinder_patch_sha256:-}" ]]; then
+    die "Waydroid stack defines libgbinder_patch_sha256 without libgbinder_patch"
+fi
+
+printf 'Using Waydroid stack lock:\n  %s\n' "$WAYDROID_STACK_LOCK_PATH"
+printf '  Waydroid:       %s-%s\n' "$waydroid_version" "$waydroid_pkgrel"
+printf '  libglibutil:    %s-%s\n' "$libglibutil_version" "$libglibutil_pkgrel"
+printf '  libgbinder:     %s-%s\n' "$libgbinder_version" "$libgbinder_pkgrel"
+printf '  python-gbinder: %s-%s\n' "$python_gbinder_version" "$python_gbinder_pkgrel"
 
 rm -rf -- "$PACKAGE_WORK_ROOT" "$PACKAGE_OUTPUT_ROOT"
 install -d -o "$HOST_UID" -g "$HOST_GID" \
@@ -77,6 +138,20 @@ build_package() {
             SRCDEST="$SOURCE_CACHE" \
             PKGDEST="$PACKAGE_OUTPUT_ROOT" \
             BUILDDIR="$package_work/build" \
+            WAYDROID_LIBGLIBUTIL_VERSION="$libglibutil_version" \
+            WAYDROID_LIBGLIBUTIL_PKGREL="$libglibutil_pkgrel" \
+            WAYDROID_LIBGLIBUTIL_SHA256="$libglibutil_sha256" \
+            WAYDROID_LIBGBINDER_VERSION="$libgbinder_version" \
+            WAYDROID_LIBGBINDER_PKGREL="$libgbinder_pkgrel" \
+            WAYDROID_LIBGBINDER_SHA256="$libgbinder_sha256" \
+            WAYDROID_LIBGBINDER_PATCH="${libgbinder_patch:-}" \
+            WAYDROID_LIBGBINDER_PATCH_SHA256="${libgbinder_patch_sha256:-}" \
+            WAYDROID_PYTHON_GBINDER_VERSION="$python_gbinder_version" \
+            WAYDROID_PYTHON_GBINDER_PKGREL="$python_gbinder_pkgrel" \
+            WAYDROID_PYTHON_GBINDER_SHA256="$python_gbinder_sha256" \
+            WAYDROID_VERSION="$waydroid_version" \
+            WAYDROID_PKGREL="$waydroid_pkgrel" \
+            WAYDROID_SHA256="$waydroid_sha256" \
             makepkg --cleanbuild --clean --force --nodeps --noconfirm
     )
 }
@@ -111,6 +186,29 @@ for package_name in libglibutil libgbinder python-gbinder waydroid; do
         awk -F' = ' '$1 == "pkgname" {print $2; exit}')"
     [[ "$metadata_name" == "$package_name" ]] || \
         die "package metadata mismatch for $package_name"
+    # check verions match
+    metadata_version="$(
+    bsdtar -xOf "${package_matches[0]}" .PKGINFO |
+        awk -F' = ' '$1 == "pkgver" {print $2; exit}'
+    )"
+    case "$package_name" in
+        libglibutil)
+            expected_version="${libglibutil_version}-${libglibutil_pkgrel}"
+            ;;
+        libgbinder)
+            expected_version="${libgbinder_version}-${libgbinder_pkgrel}"
+            ;;
+        python-gbinder)
+            expected_version="${python_gbinder_version}-${python_gbinder_pkgrel}"
+            ;;
+        waydroid)
+            expected_version="${waydroid_version}-${waydroid_pkgrel}"
+            ;;
+    esac
+
+    [[ "$metadata_version" == "$expected_version" ]] || \
+        die "package version mismatch for $package_name: expected $expected_version, got $metadata_version"
+    
 done
 
 waydroid_package=("$PACKAGE_OUTPUT_ROOT/waydroid-"*.pkg.tar.zst)
@@ -135,8 +233,8 @@ host_python_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{
 [[ "$packaged_python_version" == "$host_python_version" ]] || \
     die "python-gbinder targets Python $packaged_python_version, not $host_python_version"
 
-install -m 0644 "$PACKAGE_RECIPE_ROOT/sources.lock" \
-    "$PACKAGE_OUTPUT_ROOT/sources.lock"
+install -m 0644 "$WAYDROID_STACK_LOCK_PATH" \
+    "$PACKAGE_OUTPUT_ROOT/waydroid-stack.lock"
 chown -R "$HOST_UID:$HOST_GID" "$PACKAGE_OUTPUT_ROOT"
 
 printf '\nVerified host packages created at:\n  %s\n' "$PACKAGE_OUTPUT_ROOT"

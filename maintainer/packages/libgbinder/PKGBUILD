@@ -1,20 +1,28 @@
 pkgname=libgbinder
-pkgver=1.1.42
-pkgrel=2
+pkgver="${WAYDROID_LIBGBINDER_VERSION:?WAYDROID_LIBGBINDER_VERSION is required}"
+pkgrel="${WAYDROID_LIBGBINDER_PKGREL:?WAYDROID_LIBGBINDER_PKGREL is required}"
 pkgdesc='GLib-style interface to Binder'
 arch=('x86_64')
 url='https://github.com/mer-hybris/libgbinder'
 license=('BSD-3-Clause')
 depends=('libglibutil' 'glib2')
 options=('!debug')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz"
-        'gcc-typed-destroy-notify.patch')
-sha256sums=('32dcf31c5dc823af11558d180ed5fabb160fdfafe60f01d3212fd200a0842aed'
-            'cdbba28fe130e681f65193f535e4031384c857bd78963b735970f632254407d5')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz")
+sha256sums=("${WAYDROID_LIBGBINDER_SHA256:?WAYDROID_LIBGBINDER_SHA256 is required}")
+
+if [[ -n "${WAYDROID_LIBGBINDER_PATCH:-}" ]]; then
+    source+=("$WAYDROID_LIBGBINDER_PATCH")
+    sha256sums+=(
+        "${WAYDROID_LIBGBINDER_PATCH_SHA256:?WAYDROID_LIBGBINDER_PATCH_SHA256 is required when a patch is selected}"
+    )
+fi
 
 prepare() {
-  cd "$pkgname-$pkgver"
-  patch -Np1 -i ../gcc-typed-destroy-notify.patch
+    cd "$pkgname-$pkgver"
+
+    if [[ -n "${WAYDROID_LIBGBINDER_PATCH:-}" ]]; then
+        patch -Np1 -i "../$WAYDROID_LIBGBINDER_PATCH"
+    fi
 }
 
 build() {

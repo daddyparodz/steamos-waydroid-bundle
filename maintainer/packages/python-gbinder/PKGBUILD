@@ -1,6 +1,6 @@
 pkgname=python-gbinder
-pkgver=1.1.2
-pkgrel=3
+pkgver="${WAYDROID_PYTHON_GBINDER_VERSION:?WAYDROID_PYTHON_GBINDER_VERSION is required}"
+pkgrel="${WAYDROID_PYTHON_GBINDER_PKGREL:?WAYDROID_PYTHON_GBINDER_PKGREL is required}"
 pkgdesc='Python bindings for libgbinder'
 arch=('x86_64')
 url='https://github.com/erfanoabdi/gbinder-python'
@@ -9,7 +9,7 @@ depends=('libgbinder')
 makedepends=('cython' 'python-setuptools')
 options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz")
-sha256sums=('2dc424d5c2594146612e4bd752964f8928a62eec7c5ce6046f4c582079d0b537')
+sha256sums=("${WAYDROID_PYTHON_GBINDER_SHA256:?WAYDROID_PYTHON_GBINDER_SHA256 is required}")
 
 build() {
   cd "gbinder-python-$pkgver"

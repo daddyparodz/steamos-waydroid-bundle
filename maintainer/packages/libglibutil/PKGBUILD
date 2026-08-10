@@ -1,6 +1,6 @@
 pkgname=libglibutil
-pkgver=1.0.80
-pkgrel=1
+pkgver="${WAYDROID_LIBGLIBUTIL_VERSION:?WAYDROID_LIBGLIBUTIL_VERSION is required}"
+pkgrel="${WAYDROID_LIBGLIBUTIL_PKGREL:?WAYDROID_LIBGLIBUTIL_PKGREL is required}"
 pkgdesc='Library of GLib utilities'
 arch=('x86_64')
 url='https://github.com/sailfishos/libglibutil'
@@ -8,7 +8,7 @@ license=('BSD-3-Clause')
 depends=('glib2')
 options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgver.tar.gz")
-sha256sums=('ab4728157b68f84492512c7a451fe193924ae2aac3aa851de06eb3fd5acdc714')
+sha256sums=("${WAYDROID_LIBGLIBUTIL_SHA256:?WAYDROID_LIBGLIBUTIL_SHA256 is required}")
 
 build() {
   cd "$pkgname-$pkgver"

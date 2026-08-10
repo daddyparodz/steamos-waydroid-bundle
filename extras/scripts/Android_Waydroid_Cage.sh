@@ -78,25 +78,65 @@ then
 fi
 
 cleanup_required=false
+LAUNCH_ERROR_LOG="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-launch.XXXXXX")"
 
 cleanup() {
 	if [ "$cleanup_required" = true ]; then
 		cleanup_required=false
 		sudo /usr/bin/waydroid-shutdown-scripts || true
 	fi
+	rm -f -- "$LAUNCH_ERROR_LOG"
 }
 
-trap cleanup EXIT HUP INT TERM
+show_launch_failure() {
+	local error_details
+
+	error_details="$(tail -n 30 "$LAUNCH_ERROR_LOG" 2> /dev/null || true)"
+	if [ -z "$error_details" ]; then
+		error_details="No diagnostic output was produced."
+	fi
+	cleanup
+	kdialog --error "Waydroid could not finish starting.
+
+$error_details
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the reported problem."
+	exit 1
+}
+
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 
 # Mount persistent Android state before starting the container. From this point
 # onward, the EXIT trap owns cleanup, including launch failures and signals.
-sudo /usr/bin/waydroid-mount
+if ! PREFLIGHT_OUTPUT=$(sudo /usr/bin/waydroid-mount 2>&1)
+then
+	kdialog --error "Waydroid preflight failed before Cage was started.
+
+$PREFLIGHT_OUTPUT
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the reported problem."
+	exit 1
+fi
 cleanup_required=true
 
-sudo /usr/bin/waydroid-firewall
+if ! CONTAINER_OUTPUT=$(sudo /usr/bin/waydroid-firewall 2>&1)
+then
+	kdialog --error "Waydroid container startup failed.
+
+$CONTAINER_OUTPUT
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the host integration."
+	exit 1
+fi
 
 if ! systemctl is-active --quiet waydroid-container.service; then
-	kdialog --sorry "Something went wrong. The Waydroid container did not initialize correctly."
+	SERVICE_STATUS="$(systemctl status --no-pager waydroid-container.service 2>&1 || true)"
+	kdialog --error "The Waydroid container did not remain active.
+
+$SERVICE_STATUS
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the host integration."
 	exit 1
 fi
 
@@ -105,7 +145,7 @@ if [ -z "${1:-}" ]; then
 	# Variables inside this single-quoted command are intentionally expanded
 	# by the inner bash process using the positional arguments supplied below.
 	# shellcheck disable=SC2016
-	"$CAGE" -- bash -c '
+	if ! "$CAGE" -- bash -c '
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
@@ -125,15 +165,25 @@ if [ -z "${1:-}" ]; then
 			persist.waydroid.fake_touch \
 			"$(cat "$CONFIG_DIR/fake_touch")"
 
-		sudo /usr/bin/waydroid-startup-scripts
-	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR"
+		if ! sudo /usr/bin/waydroid-startup-scripts; then
+			jobs -pr | while IFS= read -r child_pid; do
+				kill "$child_pid" 2>/dev/null || true
+			done
+			wait 2>/dev/null || true
+			exit 1
+		fi
+	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" \
+		> "$LAUNCH_ERROR_LOG" 2>&1
+	then
+		show_launch_failure
+	fi
 else
 	PACKAGE="$1"
 
 	# Variables inside this single-quoted command are intentionally expanded
 	# by the inner bash process using the positional arguments supplied below.
 	# shellcheck disable=SC2016
-	"$CAGE" -- bash -c '
+	if ! "$CAGE" -- bash -c '
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
@@ -154,13 +204,22 @@ else
 			persist.waydroid.fake_touch \
 			"$(cat "$CONFIG_DIR/fake_touch")"
 
-		sudo /usr/bin/waydroid-startup-scripts
+		if ! sudo /usr/bin/waydroid-startup-scripts; then
+			jobs -pr | while IFS= read -r child_pid; do
+				kill "$child_pid" 2>/dev/null || true
+			done
+			wait 2>/dev/null || true
+			exit 1
+		fi
 		sleep 1
 
 		/usr/bin/waydroid app launch "$PACKAGE" &
 		sleep 1
 
 		/usr/bin/waydroid show-full-ui &
-	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$PACKAGE"
+	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$PACKAGE" \
+		> "$LAUNCH_ERROR_LOG" 2>&1
+	then
+		show_launch_failure
+	fi
 fi
-

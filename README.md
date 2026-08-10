@@ -177,6 +177,12 @@ reactivates an already-installed compatible bundle when possible. After a
 SteamOS A/B rollback, this can restore the matching retained bundle without a
 network request. If no local match exists, run the installer in Desktop Mode.
 
+Before entering Cage, the launcher also confirms that Binder is available and
+that the persistent Android image is a structurally valid ext4 Waydroid image.
+Android has 90 seconds to complete boot. A preflight failure, container failure,
+or boot timeout returns to Game Mode with a diagnostic instead of waiting
+indefinitely on a black screen.
+
 ## Artifact sources
 
 The normal first run uses the public Release at:

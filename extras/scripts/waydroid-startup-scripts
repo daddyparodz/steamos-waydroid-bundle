@@ -1,14 +1,35 @@
 #!/bin/bash
 
+BOOT_TIMEOUT_SECONDS=90
+
 # capture the existing kernel.pid_max value
 sysctl -a 2> /dev/null | grep kernel.pid_max | cut -d " " -f 3 > /home/deck/Android_Waydroid/orig_kernel.pid_max
 
 # set the kernel.pid_max to 65535
 sudo sysctl -w kernel.pid_max=65535
 
-# delay before running scripts
-while [[ -z $(waydroid shell getprop sys.boot_completed) ]]
+# Bound both each query and the overall boot wait. Missing Binder or a failed
+# container must return control to the launcher rather than poll forever.
+boot_deadline=$((SECONDS + BOOT_TIMEOUT_SECONDS))
+while true
 do
+	boot_completed=$(timeout 5 waydroid shell getprop sys.boot_completed 2> /dev/null || true)
+	if [[ "$boot_completed" == 1 ]]
+	then
+		break
+	fi
+	if ! systemctl is-active --quiet waydroid-container.service
+	then
+		echo "error: Waydroid container stopped before Android completed boot" >&2
+		systemctl status --no-pager waydroid-container.service >&2 || true
+		exit 1
+	fi
+	if (( SECONDS >= boot_deadline ))
+	then
+		echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
+		echo "Run the SteamOS Waydroid installer in Desktop Mode to check Binder, the Android image and host integration." >&2
+		exit 124
+	fi
 	sleep 5
 done
 
@@ -61,4 +82,3 @@ else
 fi
 
 exit
-

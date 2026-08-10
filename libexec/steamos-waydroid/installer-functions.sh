@@ -525,19 +525,51 @@ apply_android_custom_config () {
 
 # install arm translation layer from casualsnek / aleasto waydroid_script
 install_android_extras () {
-
 	# casualsnek / aleasto waydroid_script - install libndk / libhoudini and widevine
-	python3 -m venv "$WAYDROID_SCRIPT_DIR"/venv
-	"$WAYDROID_SCRIPT_DIR"/venv/bin/pip install -r "$WAYDROID_SCRIPT_DIR"/requirements.txt &> /dev/null
+	echo "*** create waydroid_script virtual environment ***" >> "$LOGFILE"
+	if ! python3 -m venv "$WAYDROID_SCRIPT_DIR"/venv >> "$LOGFILE" 2>&1
+	then
+		echo "Error: could not create the waydroid_script Python environment." >&2
+		echo "Details were saved to: $LOGFILE" >&2
+		rm -rf -- "$WAYDROID_SCRIPT_DIR"
+		return 1
+	fi
+
+	echo "*** install waydroid_script Python requirements ***" >> "$LOGFILE"
+	if ! "$WAYDROID_SCRIPT_DIR"/venv/bin/pip install \
+		-r "$WAYDROID_SCRIPT_DIR"/requirements.txt >> "$LOGFILE" 2>&1
+	then
+		echo "Error: waydroid_script Python requirements could not be installed." >&2
+		echo "Details were saved to: $LOGFILE" >&2
+		rm -rf -- "$WAYDROID_SCRIPT_DIR"
+		return 1
+	fi
 
 	# shellcheck disable=SC2154
-	echo "$ARM_Choice installation started:"
+	echo "$ARM_Choice and Widevine installation started."
+	echo "*** install $ARM_Choice and Widevine ***" >> "$LOGFILE"
 	# shellcheck disable=SC2154
-	echo -e "$current_password\n" | sudo -S "$WAYDROID_SCRIPT_DIR"/venv/bin/python3 "$WAYDROID_SCRIPT_DIR"/main.py -a13 install {"$ARM_Choice",widevine}
+	if ! { printf '%s\n' "$current_password" | \
+		sudo -S "$WAYDROID_SCRIPT_DIR"/venv/bin/python3 \
+		"$WAYDROID_SCRIPT_DIR"/main.py -a13 install "$ARM_Choice" widevine; } \
+		>> "$LOGFILE" 2>&1
+	then
+		echo "Error: $ARM_Choice or Widevine installation failed." >&2
+		echo "Details were saved to: $LOGFILE" >&2
+		# The external tool may have created root-owned files in its checkout.
+		printf '%s\n' "$current_password" | \
+			sudo -S rm -rf -- "$WAYDROID_SCRIPT_DIR" &> /dev/null || true
+		return 1
+	fi
 
-	echo casualsnek / aleasto waydroid_script done. "$ARM_Choice" installed.
+	echo "waydroid_script completed successfully. $ARM_Choice and Widevine were installed."
 	# shellcheck disable=SC2154
-	echo -e "$current_password\n" | sudo -S rm -rf "$WAYDROID_SCRIPT_DIR"
+	if ! printf '%s\n' "$current_password" | \
+		sudo -S rm -rf -- "$WAYDROID_SCRIPT_DIR"
+	then
+		echo "Warning: temporary waydroid_script files could not be removed: $WAYDROID_SCRIPT_DIR" >&2
+	fi
+	return 0
 }
 
 check_waydroid_init () {

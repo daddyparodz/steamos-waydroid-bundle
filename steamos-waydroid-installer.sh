@@ -784,7 +784,11 @@ fi
 		echo No need for casualsnek / aleasto waydroid_script for TV13 images.
 		echo TV13 images already contains libhoudini arm translation layer and widevine.
 	else
-		install_android_extras
+		if ! install_android_extras
+		then
+			echo "Android extras installation failed; the incomplete installation will be cleaned up." >&2
+			cleanup_exit
+		fi
 	fi
 
 	# apply custom config for controller detection, root and fingerprint spoof

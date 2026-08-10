@@ -13,6 +13,25 @@ die() {
 	exit 1
 }
 
+diagnose_binder() {
+	printf 'Binder diagnostics:\n' >&2
+	printf '  required devices:\n' >&2
+	ls -l /dev/anbox-binder /dev/anbox-vndbinder /dev/anbox-hwbinder >&2 2>/dev/null || true
+	printf '  binderfs mount:\n' >&2
+	findmnt /dev/binderfs >&2 2>/dev/null || true
+	printf '  binderfs contents:\n' >&2
+	ls -l /dev/binderfs >&2 2>/dev/null || true
+	printf '  binder filesystem support:\n' >&2
+	grep -w binder /proc/filesystems >&2 2>/dev/null || true
+	printf '  binder modules:\n' >&2
+	ls -d /sys/module/binder /sys/module/binder_linux >&2 2>/dev/null || true
+}
+
+binder_die() {
+	diagnose_binder
+	die "$*"
+}
+
 cleanup_failed_mount() {
 	if [[ "$MOUNTED_BY_SCRIPT" == true ]] &&
 		findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
@@ -23,18 +42,28 @@ cleanup_failed_mount() {
 	fi
 }
 
-validate_binder() {
-	local binder_module binder_filename modules_builtin
+required_binder_devices_exist() {
+	local binder_device
 
-	if [[ -d /sys/module/binder || -d /sys/module/binder_linux ]]; then
-		printf 'Binder support is active.\n'
-		return 0
-	fi
+	for binder_device in \
+		/dev/anbox-binder \
+		/dev/anbox-vndbinder \
+		/dev/anbox-hwbinder; do
+		[[ -c "$binder_device" ]] || return 1
+	done
+}
+
+load_binder_module() {
+	local binder_module binder_filename modules_builtin
 
 	# modprobe selects modules for the running atomic SteamOS release and
 	# rejects an unusable module itself. Accept either the in-tree or bundled
 	# module name without independently comparing kernel fingerprints.
 	for binder_module in binder_linux binder; do
+		if [[ -d "/sys/module/$binder_module" ]]; then
+			printf 'Binder support is active using %s.\n' "$binder_module"
+			return 0
+		fi
 		binder_filename="$(modinfo -F filename "$binder_module" 2>/dev/null || true)"
 		if [[ "$binder_filename" == "(builtin)" ]]; then
 			printf 'SteamOS provides built-in Binder support.\n'
@@ -58,6 +87,82 @@ validate_binder() {
 	fi
 
 	die "Binder support is missing; run the SteamOS Waydroid installer in Desktop Mode"
+}
+
+allocate_binderfs_device() {
+	local binder_device=$1
+
+	python3 - "$binder_device" <<'PY'
+import array
+import fcntl
+import struct
+import sys
+
+BINDERFS_MAX_NAME = 255
+IOC_NRBITS = 8
+IOC_TYPEBITS = 8
+IOC_SIZEBITS = 14
+IOC_WRITE = 1
+IOC_READ = 2
+IOC_NRSHIFT = 0
+IOC_TYPESHIFT = IOC_NRSHIFT + IOC_NRBITS
+IOC_SIZESHIFT = IOC_TYPESHIFT + IOC_TYPEBITS
+IOC_DIRSHIFT = IOC_SIZESHIFT + IOC_SIZEBITS
+BINDER_CTL_ADD = (
+    ((IOC_READ | IOC_WRITE) << IOC_DIRSHIFT)
+    | (ord("b") << IOC_TYPESHIFT)
+    | (1 << IOC_NRSHIFT)
+    | (struct.calcsize("256sII") << IOC_SIZESHIFT)
+)
+
+name = sys.argv[1].encode()
+if len(name) > BINDERFS_MAX_NAME:
+    raise SystemExit(f"Binder device name is too long: {sys.argv[1]}")
+
+request = array.array("B", struct.pack("256sII", name, 0, 0))
+with open("/dev/binderfs/binder-control", "rb", buffering=0) as control:
+    fcntl.ioctl(control.fileno(), BINDER_CTL_ADD, request, True)
+PY
+}
+
+provision_binder_devices() {
+	local binder_device
+
+	grep -qw binder /proc/filesystems ||
+		binder_die "Binder devices are missing and binderfs is not supported by this kernel"
+
+	mkdir -p /dev/binderfs
+	if ! findmnt --mountpoint /dev/binderfs >/dev/null 2>&1; then
+		mount -t binder binder /dev/binderfs ||
+			binder_die "could not mount binderfs at /dev/binderfs"
+	fi
+	[[ -c /dev/binderfs/binder-control ]] ||
+		binder_die "binderfs is mounted but /dev/binderfs/binder-control is missing"
+
+	for binder_device in anbox-binder anbox-vndbinder anbox-hwbinder; do
+		if [[ ! -c "/dev/binderfs/$binder_device" ]]; then
+			allocate_binderfs_device "$binder_device" ||
+				binder_die "could not allocate /dev/binderfs/$binder_device using binder-control"
+		fi
+		[[ -c "/dev/binderfs/$binder_device" ]] ||
+			binder_die "binder-control did not create /dev/binderfs/$binder_device"
+		ln -sfn "/dev/binderfs/$binder_device" "/dev/$binder_device" ||
+			binder_die "could not link /dev/$binder_device to /dev/binderfs/$binder_device"
+	done
+}
+
+validate_binder() {
+	load_binder_module
+
+	if ! required_binder_devices_exist; then
+		provision_binder_devices
+	fi
+
+	if ! required_binder_devices_exist; then
+		binder_die "Binder support is loaded, but the required Waydroid Binder devices are unavailable"
+	fi
+
+	printf 'Binder support is active and Waydroid Binder devices are ready.\n'
 }
 
 validate_image() {

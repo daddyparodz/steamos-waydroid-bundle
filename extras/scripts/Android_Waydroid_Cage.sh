@@ -6,8 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_BUNDLE_SELECTOR="$SCRIPT_DIR/select-bundle"
 
 if [ -x "$LOCAL_BUNDLE_SELECTOR" ] &&
-	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1)
-then
+	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1); then
 	kdialog --error "No installed Cage bundle matches this SteamOS build.
 
 $SELECTOR_OUTPUT
@@ -28,8 +27,7 @@ RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
 if [ ! -x "$CAGE" ] ||
 	[ ! -x "$WLR_RANDR" ] ||
 	[ ! -x "$TARGET_CHECK" ] ||
-	[ ! -f "$BUNDLE/.verified" ]
-then
+	[ ! -f "$BUNDLE/.verified" ]; then
 	kdialog --error "Cage bundle is missing or unverified. Run the installer from Desktop Mode."
 	exit 1
 fi
@@ -38,13 +36,11 @@ target_check_args=("$BUNDLE")
 active_bundle_version="$(basename "$(readlink -f "$BUNDLE")")"
 
 if [ -r "$TARGET_ALLOW" ] &&
-	[ "$(cat "$TARGET_ALLOW")" = "$active_bundle_version" ]
-then
+	[ "$(cat "$TARGET_ALLOW")" = "$active_bundle_version" ]; then
 	target_check_args+=(--allow-target-mismatch)
 fi
 
-if ! TARGET_CHECK_OUTPUT=$("$TARGET_CHECK" "${target_check_args[@]}" 2>&1)
-then
+if ! TARGET_CHECK_OUTPUT=$("$TARGET_CHECK" "${target_check_args[@]}" 2>&1); then
 	REPORT_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid/reports/$(date -u +%Y%m%dT%H%M%SZ)-compatibility.md"
 
 	if [ -x "$COMPATIBILITY_REPORT" ]; then
@@ -71,8 +67,7 @@ fi
 
 if [ -z "$RESOLUTION" ] ||
 	[ ! -r "$CONFIG_DIR/fake_wifi" ] ||
-	[ ! -r "$CONFIG_DIR/fake_touch" ]
-then
+	[ ! -r "$CONFIG_DIR/fake_touch" ]; then
 	kdialog --error "Waydroid launcher configuration is incomplete. Reinstall the host component."
 	exit 1
 fi
@@ -91,7 +86,7 @@ cleanup() {
 show_launch_failure() {
 	local error_details
 
-	error_details="$(tail -n 30 "$LAUNCH_ERROR_LOG" 2> /dev/null || true)"
+	error_details="$(tail -n 30 "$LAUNCH_ERROR_LOG" 2>/dev/null || true)"
 	if [ -z "$error_details" ]; then
 		error_details="No diagnostic output was produced."
 	fi
@@ -109,8 +104,7 @@ trap 'exit 130' HUP INT TERM
 
 # Mount persistent Android state before starting the container. From this point
 # onward, the EXIT trap owns cleanup, including launch failures and signals.
-if ! PREFLIGHT_OUTPUT=$(sudo /usr/bin/waydroid-mount 2>&1)
-then
+if ! PREFLIGHT_OUTPUT=$(sudo /usr/bin/waydroid-mount 2>&1); then
 	kdialog --error "Waydroid preflight failed before Cage was started.
 
 $PREFLIGHT_OUTPUT
@@ -120,8 +114,7 @@ Run the SteamOS Waydroid installer in Desktop Mode to repair the reported proble
 fi
 cleanup_required=true
 
-if ! CONTAINER_OUTPUT=$(sudo /usr/bin/waydroid-firewall 2>&1)
-then
+if ! CONTAINER_OUTPUT=$(sudo /usr/bin/waydroid-firewall 2>&1); then
 	kdialog --error "Waydroid container startup failed.
 
 $CONTAINER_OUTPUT
@@ -173,8 +166,7 @@ if [ -z "${1:-}" ]; then
 			exit 1
 		fi
 	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" \
-		> "$LAUNCH_ERROR_LOG" 2>&1
-	then
+		>"$LAUNCH_ERROR_LOG" 2>&1; then
 		show_launch_failure
 	fi
 else
@@ -218,8 +210,7 @@ else
 
 		/usr/bin/waydroid show-full-ui &
 	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$PACKAGE" \
-		> "$LAUNCH_ERROR_LOG" 2>&1
-	then
+		>"$LAUNCH_ERROR_LOG" 2>&1; then
 		show_launch_failure
 	fi
 fi

@@ -3,7 +3,7 @@
 BOOT_TIMEOUT_SECONDS=90
 
 # capture the existing kernel.pid_max value
-sysctl -a 2> /dev/null | grep kernel.pid_max | cut -d " " -f 3 > /home/deck/Android_Waydroid/orig_kernel.pid_max
+sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >/home/deck/Android_Waydroid/orig_kernel.pid_max
 
 # set the kernel.pid_max to 65535
 sudo sysctl -w kernel.pid_max=65535
@@ -11,21 +11,17 @@ sudo sysctl -w kernel.pid_max=65535
 # Bound both each query and the overall boot wait. Missing Binder or a failed
 # container must return control to the launcher rather than poll forever.
 boot_deadline=$((SECONDS + BOOT_TIMEOUT_SECONDS))
-while true
-do
-	boot_completed=$(timeout 5 waydroid shell getprop sys.boot_completed 2> /dev/null || true)
-	if [[ "$boot_completed" == 1 ]]
-	then
+while true; do
+	boot_completed=$(timeout 5 waydroid shell getprop sys.boot_completed 2>/dev/null || true)
+	if [[ "$boot_completed" == 1 ]]; then
 		break
 	fi
-	if ! systemctl is-active --quiet waydroid-container.service
-	then
+	if ! systemctl is-active --quiet waydroid-container.service; then
 		echo "error: Waydroid container stopped before Android completed boot" >&2
 		systemctl status --no-pager waydroid-container.service >&2 || true
 		exit 1
 	fi
-	if (( SECONDS >= boot_deadline ))
-	then
+	if ((SECONDS >= boot_deadline)); then
 		echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
 		echo "Run the SteamOS Waydroid installer in Desktop Mode to check Binder, the Android image and host integration." >&2
 		exit 124
@@ -72,8 +68,7 @@ chmod 777 -R /data/media/0/Android/obb
 chmod 777 -R /data/media/0/Android/data"
 
 # Xbox Wireless Controller spoofing for CoD Mobile to work without 3rd party controller mapping (mantis etc)
-if [ -f /home/deck/Android_Waydroid/spoofing/classes.dex ]
-then
+if [ -f /home/deck/Android_Waydroid/spoofing/classes.dex ]; then
 	cp /home/deck/Android_Waydroid/spoofing/classes.dex /var/lib/waydroid/overlay/system/bin/classes.dex
 	waydroid shell -- sh -c "export CLASSPATH=/system/bin/classes.dex ; app_process / com.android.commands.hid.Hid" &
 

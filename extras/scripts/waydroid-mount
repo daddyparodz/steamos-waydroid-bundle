@@ -14,22 +14,19 @@ die() {
 }
 
 cleanup_failed_mount() {
-	if [[ "$MOUNTED_BY_SCRIPT" == true ]] && \
-		findmnt --mountpoint "$WAYDROID_MOUNT" > /dev/null 2>&1
-	then
-		umount "$WAYDROID_MOUNT" 2> /dev/null || true
+	if [[ "$MOUNTED_BY_SCRIPT" == true ]] &&
+		findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
+		umount "$WAYDROID_MOUNT" 2>/dev/null || true
 	fi
-	if [[ "$LOOP_DEVICE" == /dev/loop* ]]
-	then
-		losetup -d "$LOOP_DEVICE" 2> /dev/null || true
+	if [[ "$LOOP_DEVICE" == /dev/loop* ]]; then
+		losetup -d "$LOOP_DEVICE" 2>/dev/null || true
 	fi
 }
 
 validate_binder() {
 	local binder_module binder_filename modules_builtin
 
-	if [[ -d /sys/module/binder || -d /sys/module/binder_linux ]]
-	then
+	if [[ -d /sys/module/binder || -d /sys/module/binder_linux ]]; then
 		printf 'Binder support is active.\n'
 		return 0
 	fi
@@ -37,18 +34,14 @@ validate_binder() {
 	# modprobe selects modules for the running atomic SteamOS release and
 	# rejects an unusable module itself. Accept either the in-tree or bundled
 	# module name without independently comparing kernel fingerprints.
-	for binder_module in binder_linux binder
-	do
-		binder_filename="$(modinfo -F filename "$binder_module" 2> /dev/null || true)"
-		if [[ "$binder_filename" == "(builtin)" ]]
-		then
+	for binder_module in binder_linux binder; do
+		binder_filename="$(modinfo -F filename "$binder_module" 2>/dev/null || true)"
+		if [[ "$binder_filename" == "(builtin)" ]]; then
 			printf 'SteamOS provides built-in Binder support.\n'
 			return 0
 		fi
-		if [[ -n "$binder_filename" ]] && modprobe "$binder_module"
-		then
-			if [[ -d "/sys/module/$binder_module" ]]
-			then
+		if [[ -n "$binder_filename" ]] && modprobe "$binder_module"; then
+			if [[ -d "/sys/module/$binder_module" ]]; then
 				printf 'Loaded Binder support using %s.\n' "$binder_module"
 				return 0
 			fi
@@ -58,9 +51,8 @@ validate_binder() {
 	# Some built-in modules are recorded in modules.builtin even when modinfo
 	# does not expose them by name.
 	modules_builtin="/usr/lib/modules/$(uname -r)/modules.builtin"
-	if [[ -r "$modules_builtin" ]] && \
-		grep -Eq '(^|/)(binder|binder_linux)\.ko$' "$modules_builtin"
-	then
+	if [[ -r "$modules_builtin" ]] &&
+		grep -Eq '(^|/)(binder|binder_linux)\.ko$' "$modules_builtin"; then
 		printf 'SteamOS provides built-in Binder support.\n'
 		return 0
 	fi
@@ -73,8 +65,8 @@ validate_image() {
 
 	[[ ! -L "$IMAGE" ]] || die "Android image must not be a symbolic link: $IMAGE"
 	[[ -f "$IMAGE" ]] || die "Android image is missing or is not a regular file: $IMAGE"
-	filesystem_type="$(blkid -p -s TYPE -o value -- "$IMAGE" 2> /dev/null || true)"
-	[[ "$filesystem_type" == ext4 ]] || \
+	filesystem_type="$(blkid -p -s TYPE -o value -- "$IMAGE" 2>/dev/null || true)"
+	[[ "$filesystem_type" == ext4 ]] ||
 		die "Android image is not a recognisable ext4 filesystem: $IMAGE"
 }
 
@@ -85,36 +77,31 @@ validate_mounted_image() {
 		waydroid_base.prop \
 		waydroid.cfg \
 		lxc/waydroid/config \
-		rootfs
-	do
-		[[ -e "$WAYDROID_MOUNT/$required_path" ]] || \
+		rootfs; do
+		[[ -e "$WAYDROID_MOUNT/$required_path" ]] ||
 			die "Android image is missing required state: $required_path"
 	done
-	[[ -s "$WAYDROID_MOUNT/waydroid_base.prop" ]] || \
+	[[ -s "$WAYDROID_MOUNT/waydroid_base.prop" ]] ||
 		die "Android image has an empty waydroid_base.prop"
-	[[ -s "$WAYDROID_MOUNT/waydroid.cfg" ]] || \
+	[[ -s "$WAYDROID_MOUNT/waydroid.cfg" ]] ||
 		die "Android image has an empty waydroid.cfg"
 }
 
 validate_binder
 validate_image
 
-systemctl stop waydroid-container.service 2> /dev/null || true
-if findmnt --mountpoint "$WAYDROID_MOUNT" > /dev/null 2>&1
-then
+systemctl stop waydroid-container.service 2>/dev/null || true
+if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
 	umount "$WAYDROID_MOUNT" || die "could not unmount the previous Waydroid image"
 fi
-if findmnt -rn -o TARGET | grep -Eq "^${WAYDROID_MOUNT}(/|$)"
-then
+if findmnt -rn -o TARGET | grep -Eq "^${WAYDROID_MOUNT}(/|$)"; then
 	findmnt -R "$WAYDROID_MOUNT" >&2 || true
 	die "a stale mount remains below $WAYDROID_MOUNT"
 fi
 
-while IFS=: read -r attached_loop _
-do
-	if [[ "$attached_loop" == /dev/loop* ]]
-	then
-		losetup -d "$attached_loop" || \
+while IFS=: read -r attached_loop _; do
+	if [[ "$attached_loop" == /dev/loop* ]]; then
+		losetup -d "$attached_loop" ||
 			die "could not detach the previous Android image loop device: $attached_loop"
 	fi
 done < <(losetup -j "$IMAGE")
@@ -122,7 +109,7 @@ done < <(losetup -j "$IMAGE")
 mkdir -p "$WAYDROID_MOUNT"
 trap cleanup_failed_mount EXIT
 trap 'exit 130' HUP INT TERM
-LOOP_DEVICE="$(losetup --find --show "$IMAGE")" || \
+LOOP_DEVICE="$(losetup --find --show "$IMAGE")" ||
 	die "could not attach the Android image to a loop device"
 [[ "$LOOP_DEVICE" == /dev/loop* ]] || die "losetup returned an invalid loop device"
 mount -t ext4 "$LOOP_DEVICE" "$WAYDROID_MOUNT" || die "could not mount the Android image"

@@ -5,11 +5,9 @@ set -Eeuo pipefail
 IMAGE=/home/deck/Android_Waydroid/waydroid.img
 PID_MAX_STATE=/home/deck/Android_Waydroid/orig_kernel.pid_max
 
-if [ -r "$PID_MAX_STATE" ]
-then
+if [ -r "$PID_MAX_STATE" ]; then
 	saved_pid_max=$(cat "$PID_MAX_STATE")
-	if [[ "$saved_pid_max" =~ ^[0-9]+$ ]]
-	then
+	if [[ "$saved_pid_max" =~ ^[0-9]+$ ]]; then
 		sysctl -w "kernel.pid_max=$saved_pid_max" || true
 	fi
 	rm -f "$PID_MAX_STATE"
@@ -18,13 +16,10 @@ fi
 systemctl stop waydroid-container.service || true
 systemctl stop firewalld.service || true
 
-if findmnt --mountpoint /var/lib/waydroid > /dev/null
-then
+if findmnt --mountpoint /var/lib/waydroid >/dev/null; then
 	umount /var/lib/waydroid || true
 fi
 
-while IFS=: read -r loop_device _
-do
+while IFS=: read -r loop_device _; do
 	[ -n "$loop_device" ] && losetup -d "$loop_device" || true
 done < <(losetup -j "$IMAGE")
-

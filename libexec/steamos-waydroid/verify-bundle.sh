@@ -51,8 +51,9 @@ verify_host_package() {
 		"$BUNDLE_ROOT/packages/$package_name-"*.pkg.tar.zst
 	)
 
-	((${#matches[@]} == 1)) && [[ -f "${matches[0]}" ]] ||
+	if ((${#matches[@]} != 1)) || [[ ! -f "${matches[0]}" ]]; then
 		die "bundle must contain exactly one $package_name package"
+	fi
 
 	package_file="${matches[0]}"
 
@@ -60,11 +61,14 @@ verify_host_package() {
 	[[ -n "$expected_version" ]] ||
 		die "Waydroid stack lock has no $version_key"
 
-	expected_pkgrel="$(lock_value "$pkgrel_key")"
-	[[ -n "$expected_pkgrel" ]] ||
-		die "Waydroid stack lock has no $pkgrel_key"
-
-	expected_package_version="${expected_version}-${expected_pkgrel}"
+	if [[ "$WAYDROID_STACK_LOCK_KIND" == legacy ]]; then
+		expected_package_version="$expected_version"
+	else
+		expected_pkgrel="$(lock_value "$pkgrel_key")"
+		[[ -n "$expected_pkgrel" ]] ||
+			die "Waydroid stack lock has no $pkgrel_key"
+		expected_package_version="${expected_version}-${expected_pkgrel}"
+	fi
 
 	metadata_name="$(
 		bsdtar -xOf "$package_file" .PKGINFO |
@@ -84,8 +88,13 @@ verify_host_package() {
 	[[ "$metadata_name" == "$package_name" ]] ||
 		die "unexpected package metadata in $(basename -- "$package_file")"
 
-	[[ "$metadata_version" == "$expected_package_version" ]] ||
-		die "$package_name version $metadata_version does not match Waydroid stack lock $expected_package_version"
+	if [[ "$WAYDROID_STACK_LOCK_KIND" == legacy ]]; then
+		[[ "$metadata_version" == "$expected_package_version-"* ]] ||
+			die "$package_name version $metadata_version does not match legacy source lock $expected_package_version"
+	else
+		[[ "$metadata_version" == "$expected_package_version" ]] ||
+			die "$package_name version $metadata_version does not match Waydroid stack lock $expected_package_version"
+	fi
 
 	[[ "$metadata_arch" == x86_64 || "$metadata_arch" == any ]] ||
 		die "$package_name has unsupported architecture $metadata_arch"
@@ -224,17 +233,41 @@ shopt -s nullglob
 # Also accept one versioned waydroid-stack-*.lock file so builds which preserve
 # the source lock filename remain verifiable.
 #
+# Older main-branch bundles used packages/sources.lock and pinned only upstream
+# versions, not pkgrel values. Keep accepting that legacy lock so testing
+# scripts can validate and install bundles produced before the stack lock split.
+#
 if [[ -r "$BUNDLE_ROOT/packages/waydroid-stack.lock" ]]; then
 	WAYDROID_STACK_LOCK="$BUNDLE_ROOT/packages/waydroid-stack.lock"
+	WAYDROID_STACK_LOCK_KIND=stack
 else
 	waydroid_stack_locks=(
 		"$BUNDLE_ROOT/packages/waydroid-stack-"*.lock
 	)
 
-	((${#waydroid_stack_locks[@]} == 1)) ||
+	if ((${#waydroid_stack_locks[@]} > 1)); then
 		die "bundle must contain exactly one Waydroid stack lock"
+	elif ((${#waydroid_stack_locks[@]} == 1)); then
+		WAYDROID_STACK_LOCK="${waydroid_stack_locks[0]}"
+		WAYDROID_STACK_LOCK_KIND=stack
+	else
+		legacy_source_locks=()
+		for legacy_source_lock in \
+			"$BUNDLE_ROOT/packages/sources.lock" \
+			"$BUNDLE_ROOT/packages/source.lock" \
+			"$BUNDLE_ROOT/packages/Source.lock"; do
 
-	WAYDROID_STACK_LOCK="${waydroid_stack_locks[0]}"
+			[[ -r "$legacy_source_lock" ]] ||
+				continue
+			legacy_source_locks+=("$legacy_source_lock")
+		done
+
+		((${#legacy_source_locks[@]} == 1)) ||
+			die "bundle must contain exactly one Waydroid stack lock or legacy source lock"
+
+		WAYDROID_STACK_LOCK="${legacy_source_locks[0]}"
+		WAYDROID_STACK_LOCK_KIND=legacy
+	fi
 fi
 
 lock_format="$(lock_value format)"
@@ -250,6 +283,9 @@ target_kernel_release="$(fingerprint_value KERNEL_RELEASE)"
 
 printf 'Verifying Waydroid stack:\n'
 printf '  Lock: %s\n' "$(basename -- "$WAYDROID_STACK_LOCK")"
+if [[ "$WAYDROID_STACK_LOCK_KIND" == legacy ]]; then
+	printf '  Compatibility: legacy source lock\n'
+fi
 
 verify_host_package \
 	libglibutil \
@@ -338,7 +374,7 @@ file "$BUNDLE_ROOT/bin/cage" |
 	die "Cage is not an x86-64 executable"
 
 readelf -d "$BUNDLE_ROOT/bin/cage" |
-	grep -F '$ORIGIN/../lib' >/dev/null ||
+	grep -F "\$ORIGIN/../lib" >/dev/null ||
 	die "Cage does not have the bundle-relative RUNPATH"
 
 bundled_wlroots="${wlroots_libraries[0]}"

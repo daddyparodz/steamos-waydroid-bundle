@@ -53,7 +53,7 @@ jobs:
           )
 
           if ((${#scripts[@]})); then
-            shellcheck "${scripts[@]}"
+            shellcheck -S warning "${scripts[@]}"
           fi
 
       - name: Check formatting

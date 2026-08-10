@@ -371,7 +371,7 @@ mount_waydroid_var () {
 	gunzip -k -f extras/waydroid.img.gz && \
 		mkfs.ext4 -F extras/waydroid.img && \
 		ROOTDEV=$(sudo losetup --find --show extras/waydroid.img) && \
-		echo -e "$current_password\n" | sudo -S mount $ROOTDEV /var/lib/waydroid
+		echo -e "$current_password\n" | sudo -S mount "$ROOTDEV" /var/lib/waydroid
 }
 
 unmount_waydroid_var () {
@@ -444,12 +444,12 @@ apply_android_custom_config () {
 	cat extras/props/waydroid_base.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop > /dev/null
 
 	# waydroid_base.prop fingerprint spoof - check if A11 or A13 and apply the spoof accordingly
+	# shellcheck disable=SC2154
 	if [ "$Android_Choice" == "A13_NO_GAPPS" ] || [ "$Android_Choice" == "A13_GAPPS" ]
 	then
 		echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop > /dev/null
 		cat extras/props/android_spoof.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop > /dev/null
-
-	else [ "$Android_Choice" == "TV13_NO_GAPPS" ] || [ "$Android_Choce" == "TV13_GAPPS" ]
+	else [ "$Android_Choice" == "TV13_NO_GAPPS" ] || [ "$Android_Choice" == "TV13_GAPPS" ]
 		echo TV13.
 		echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop > /dev/null
 		cat extras/props/androidtv_spoof.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop
@@ -460,16 +460,17 @@ apply_android_custom_config () {
 install_android_extras () {
 
 	# casualsnek / aleasto waydroid_script - install libndk / libhoudini and widevine
-	python3 -m venv $WAYDROID_SCRIPT_DIR/venv
-	$WAYDROID_SCRIPT_DIR/venv/bin/pip install -r $WAYDROID_SCRIPT_DIR/requirements.txt &> /dev/null
+	python3 -m venv "$WAYDROID_SCRIPT_DIR"/venv
+	"$WAYDROID_SCRIPT_DIR"/venv/bin/pip install -r "$WAYDROID_SCRIPT_DIR"/requirements.txt &> /dev/null
 
+	# shellcheck disable=SC2154
 	echo "$ARM_Choice installation started:"
 	# shellcheck disable=SC2154
-	echo -e "$current_password\n" | sudo -S $WAYDROID_SCRIPT_DIR/venv/bin/python3 $WAYDROID_SCRIPT_DIR/main.py -a13 install {$ARM_Choice,widevine}
+	echo -e "$current_password\n" | sudo -S "$WAYDROID_SCRIPT_DIR"/venv/bin/python3 "$WAYDROID_SCRIPT_DIR"/main.py -a13 install {"$ARM_Choice",widevine}
 
-	echo casualsnek / aleasto waydroid_script done. $ARM_Choice installed.
+	echo casualsnek / aleasto waydroid_script done. "$ARM_Choice" installed.
 	# shellcheck disable=SC2154
-	echo -e "$current_password\n" | sudo -S rm -rf $WAYDROID_SCRIPT_DIR
+	echo -e "$current_password\n" | sudo -S rm -rf "$WAYDROID_SCRIPT_DIR"
 }
 
 check_waydroid_init () {
@@ -482,9 +483,9 @@ check_waydroid_init () {
 		echo Waydroid did not initialize correctly.
 		echo This could be a hash mismatch / corrupted download.
 		echo This could also be a python issue. Attach this screenshot when filing a bug report!
-		echo Output of whereis python - $(whereis python)
-		echo Output of which python - $(which python)
-		echo Output of python version - $(python -V)
+		echo Output of whereis python - "$(whereis python)"
+		echo Output of which python - "$(which python)"
+		echo Output of python version - "$(python -V)"
 
 		cleanup_exit
 	fi

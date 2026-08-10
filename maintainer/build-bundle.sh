@@ -236,7 +236,7 @@ install -d \
     "$STAGING_ROOT/tools"
 install -m 0755 "$BUNDLE_PREFIX/bin/cage" "$STAGING_ROOT/bin/cage"
 install -m 0755 "$BUNDLE_PREFIX/bin/wlr-randr" "$STAGING_ROOT/bin/wlr-randr"
-cp -a "$BUNDLE_PREFIX"/lib/"libwlroots-${WLROOTS_API_VERSION}.so"* "$STAGING_ROOT/lib/"
+cp -a "$BUNDLE_PREFIX/lib/libwlroots-${WLROOTS_API_VERSION}.so"* "$STAGING_ROOT/lib/"
 cp -a "$OUTPUT_ROOT/.host-packages-$BUNDLE_VERSION"/. "$STAGING_ROOT/packages/"
 install -m 0644 "$TARGET_FINGERPRINT_FILE" "$STAGING_ROOT/target-fingerprint.env"
 install -m 0755 \

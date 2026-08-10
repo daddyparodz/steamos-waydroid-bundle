@@ -31,7 +31,7 @@ declare -a CHANNEL_FILES=(
     steamdeck-preview.json
     steamdeck-main.json
 )
-declare -a CHANNEL_JSON=()
+#declare -a CHANNEL_JSON=()
 declare -a CHANNEL_VERSIONS=()
 declare -a CHANNEL_BUILDIDS=()
 declare -a CHANNEL_VARIANTS=()
@@ -89,7 +89,7 @@ fetch_channel_metadata() {
         update_path="$(jq -er '.minor.candidates[0].update_path' <<<"$json")" || \
             die "could not read ${CHANNEL_NAMES[$i]} update path from Valve metadata"
 
-        CHANNEL_JSON[$i]="$json"
+#        CHANNEL_JSON[$i]="$json"
         CHANNEL_VERSIONS[$i]="$version"
         CHANNEL_BUILDIDS[$i]="$buildid"
         CHANNEL_VARIANTS[$i]="$variant"
@@ -239,6 +239,8 @@ capture_target_fingerprint() {
 
     # This is deliberately the same fingerprint collector used by the SSH sync.
     # pacman and /etc/os-release are therefore read from the image itself.
+    # Input/output redirection is intentionally handled by the invoking shell.
+    # shellcheck disable=SC2024
     sudo chroot "$IMAGE_MOUNT" \
         /usr/bin/env \
         FINGERPRINT_RUN_MAIN=1 \

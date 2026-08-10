@@ -98,11 +98,15 @@ elif [[ -n "${libgbinder_patch_sha256:-}" ]]; then
     die "Waydroid stack defines libgbinder_patch_sha256 without libgbinder_patch"
 fi
 
-printf 'Using Waydroid stack lock:\n  %s\n' "$WAYDROID_STACK_LOCK_PATH"
-printf '  Waydroid:       %s-%s\n' "$waydroid_version" "$waydroid_pkgrel"
-printf '  libglibutil:    %s-%s\n' "$libglibutil_version" "$libglibutil_pkgrel"
-printf '  libgbinder:     %s-%s\n' "$libgbinder_version" "$libgbinder_pkgrel"
-printf '  python-gbinder: %s-%s\n' "$python_gbinder_version" "$python_gbinder_pkgrel"
+# Values below are supplied by the validated Waydroid stack lock.
+# shellcheck disable=SC2154
+{
+    printf 'Using Waydroid stack lock:\n  %s\n' "$WAYDROID_STACK_LOCK_PATH"
+    printf '  Waydroid:       %s-%s\n' "$waydroid_version" "$waydroid_pkgrel"
+    printf '  libglibutil:    %s-%s\n' "$libglibutil_version" "$libglibutil_pkgrel"
+    printf '  libgbinder:     %s-%s\n' "$libgbinder_version" "$libgbinder_pkgrel"
+    printf '  python-gbinder: %s-%s\n' "$python_gbinder_version" "$python_gbinder_pkgrel"
+}
 
 # Target kernel / Binder state.
 kernel_release="$(target_kernel_release)"
@@ -133,6 +137,9 @@ if [[ "$binder_state" == "missing" ]]; then
         die "Binder source lock is missing: $BINDER_SOURCE_LOCK_PATH"
 
     unset format
+
+    # BINDER_SOURCE_LOCK_PATH is validated before sourcing.
+    # shellcheck disable=SC1090
     source "$BINDER_SOURCE_LOCK_PATH"
 
     [[ "${format:-}" == "1" ]] || \

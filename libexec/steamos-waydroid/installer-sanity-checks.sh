@@ -119,6 +119,8 @@ run_privileged_sanity_checks() {
 	fi
 	printf 'Sudo authentication succeeded.\n'
 
+	# Read by steamos-waydroid-installer.sh after run_privileged_sanity_checks returns.
+	# shellcheck disable=SC2034
 	DECKY_LOADER_STOPPED=false
 	if [[ "${REPAIR_MODE:-false}" != true ]] && \
 		systemctl is-active --quiet plugin_loader.service
@@ -130,6 +132,8 @@ run_privileged_sanity_checks() {
 			printf 'Could not stop the Decky Loader plugin service.\n' >&2
 			return 1
 		fi
+		# Read by steamos-waydroid-installer.sh after run_privileged_sanity_checks returns.
+		# shellcheck disable=SC2034
 		DECKY_LOADER_STOPPED=true
 		printf 'You will be asked whether to restart Decky Loader when installation finishes.\n'
 	fi

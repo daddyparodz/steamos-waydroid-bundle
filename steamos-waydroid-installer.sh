@@ -71,8 +71,11 @@ fi
 source /etc/os-release
 
 # following variables are used in externally sourced functions
+# shellcheck disable=SC2034
 STEAMOS_VERSION_ID=${VERSION_ID:-unknown}
+# shellcheck disable=SC2034
 STEAMOS_BUILD_ID=${BUILD_ID:-unknown}
+# shellcheck disable=SC2034
 STEAMOS_BRANCH=$(steamos-select-branch -c 2> /dev/null || true)
 
 WORKING_DIR=$SCRIPT_DIR
@@ -417,8 +420,10 @@ if [ "$REPAIR_MODE" = true ]
 then
 	repair_exit_cleanup () {
 		trap - EXIT HUP INT TERM
+		# shellcheck disable=SC2154
 		echo -e "$current_password\n" | sudo -S systemctl stop waydroid-container.service &> /dev/null || true
 		unmount_waydroid_var "$WAYDROID_IMAGE"
+		# shellcheck disable=SC2154
 		echo -e "$current_password\n" | sudo -S steamos-readonly enable &> /dev/null || true
 	}
 	trap repair_exit_cleanup EXIT

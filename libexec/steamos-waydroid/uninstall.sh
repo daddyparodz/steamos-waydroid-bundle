@@ -270,14 +270,48 @@ printf 'Unlocking SteamOS for package and system-file cleanup...\n'
 sudo steamos-readonly disable
 READONLY_DISABLED=true
 
+# Remove both the current prebuilt Binder package and the legacy DKMS package.
+# The kernel module itself is named binder_linux. Older SteamOS targets with
+# Binder built into the kernel do not install either of these packages.
+binder_package_installed=false
+for binder_package in steamos-waydroid-binder binder_linux-dkms; do
+    if pacman -Qq "$binder_package" > /dev/null 2>&1; then
+        binder_package_installed=true
+        break
+    fi
+done
+
+# Waydroid has already been stopped above, so unload our out-of-tree Binder
+# module before removing its package. Do not touch the in-tree "binder" driver
+# used by SteamOS kernels that provide Binder themselves.
+if [[ "$binder_package_installed" == true ]] &&     lsmod | awk '$1 == "binder_linux" {found=1} END {exit !found}'; then
+    printf 'Unloading the bundled Binder kernel module...
+'
+    if ! sudo modprobe -r binder_linux; then
+        printf 'error: binder_linux is still in use; Binder package removal stopped
+' >&2
+        exit 1
+    fi
+fi
+
 packages=()
-for package in waydroid python-gbinder libgbinder libglibutil binder_linux-dkms; do
+for package in     waydroid     python-gbinder     libgbinder     libglibutil     steamos-waydroid-binder     binder_linux-dkms
+do
     if pacman -Qq "$package" > /dev/null 2>&1; then
         packages+=("$package")
     fi
 done
+
 if (( ${#packages[@]} > 0 )); then
     sudo pacman -Rns --noconfirm "${packages[@]}"
+fi
+
+# Refresh the module dependency/index files after removing an out-of-tree
+# Binder package so modprobe cannot resolve a stale binder_linux entry.
+if [[ "$binder_package_installed" == true ]]; then
+    printf 'Refreshing kernel module indexes...
+'
+    sudo depmod -a "$(uname -r)"
 fi
 
 sudo rm -f -- \

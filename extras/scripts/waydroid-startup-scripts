@@ -11,22 +11,28 @@ sudo sysctl -w kernel.pid_max=65535
 # Bound both each query and the overall boot wait. Missing Binder or a failed
 # container must return control to the launcher rather than poll forever.
 boot_deadline=$((SECONDS + BOOT_TIMEOUT_SECONDS))
+
 while true; do
-	boot_completed=$(timeout 5 waydroid shell getprop sys.boot_completed 2>/dev/null || true)
-	if [[ "$boot_completed" == 1 ]]; then
-		break
-	fi
-	if ! systemctl is-active --quiet waydroid-container.service; then
-		echo "error: Waydroid container stopped before Android completed boot" >&2
-		systemctl status --no-pager waydroid-container.service >&2 || true
-		exit 1
-	fi
-	if ((SECONDS >= boot_deadline)); then
-		echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
-		echo "Run the SteamOS Waydroid installer in Desktop Mode to check Binder, the Android image and host integration." >&2
-		exit 124
-	fi
-	sleep 5
+    android_ready=$(
+        timeout 5 waydroid shell -- sh -c 'pm path android' 2>/dev/null || true
+    )
+
+    if [[ "$android_ready" == package:* ]]; then
+        break
+    fi
+
+    if ! systemctl is-active --quiet waydroid-container.service; then
+        echo "error: Waydroid container stopped before Android completed boot" >&2
+        systemctl status --no-pager waydroid-container.service >&2 || true
+        exit 1
+    fi
+
+    if ((SECONDS >= boot_deadline)); then
+        echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
+        exit 124
+    fi
+
+    sleep 5
 done
 
 # This are the commands to execute once Android boot is completed

@@ -21,7 +21,8 @@ BUNDLE_VERSION="${CALLER_BUNDLE_VERSION:-${BUNDLE_VERSION:-auto}}"
 BUNDLE_REVISION="${BUNDLE_REVISION:-r2}"
 # WLROOTS version maybe updated in newer versions of steamos
 WLROOTS_VERSION="${WLROOTS_VERSION:-0.18.2}"
-# add api version to replace hard coded "0.18" references in code
+# Consumed by build-bundle.sh after this shared library is sourced.
+# shellcheck disable=SC2034
 WLROOTS_API_VERSION="${WLROOTS_VERSION%.*}"
 # if WLROOTS changes, cage will also need updating
 CAGE_VERSION="${CAGE_VERSION:-v0.2.0}"

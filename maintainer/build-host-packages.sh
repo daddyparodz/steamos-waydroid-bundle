@@ -188,6 +188,9 @@ build_package() {
 
     (
         cd "$package_work"
+        # SHA values are populated by the validated, dynamically selected stack
+        # lock sourced above; ShellCheck cannot infer those assignments.
+        # shellcheck disable=SC2154
         setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups \
             env \
             HOME="$PACKAGE_WORK_ROOT" \

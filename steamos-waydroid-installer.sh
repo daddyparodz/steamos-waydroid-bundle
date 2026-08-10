@@ -473,25 +473,74 @@ else
 fi
 
 # Install the target-built Waydroid host package set from the verified bundle.
+# SteamOS targets with Binder built into the kernel do not carry a Binder
+# package. Targets without Binder carry exactly one steamos-waydroid-binder
+# package containing the binder_linux module built for that target kernel.
 echo Installing waydroid packages. This can take a while.
 echo "*** pacman install waydroid packages ***" >> "$LOGFILE"
 cd "$WORKING_DIR" || abort_run
 
+host_packages=(
+    "$HOST_PACKAGE_ROOT"/libglibutil*.zst
+    "$HOST_PACKAGE_ROOT"/libgbinder*.zst
+    "$HOST_PACKAGE_ROOT"/python-gbinder*.zst
+    "$HOST_PACKAGE_ROOT"/waydroid*.zst
+)
+
+shopt -s nullglob
+binder_packages=(
+    "$HOST_PACKAGE_ROOT"/steamos-waydroid-binder-*.pkg.tar.zst
+)
+shopt -u nullglob
+
+if [ "${#binder_packages[@]}" -gt 1 ]
+then
+    echo The target-built bundle contains multiple steamos-waydroid-binder packages. >&2
+    abort_run
+fi
+
+binder_package_installed=false
+if [ "${#binder_packages[@]}" -eq 1 ]
+then
+    echo "Target bundle supplies steamos-waydroid-binder for kernel $(uname -r)."
+    host_packages+=("${binder_packages[0]}")
+    binder_package_installed=true
+else
+    echo Target bundle does not require a separate Binder kernel module.
+fi
+
 if { printf '%s\n' "$current_password" |
-    sudo -S pacman -U --noconfirm \
-        "$HOST_PACKAGE_ROOT"/libglibutil*.zst \
-        "$HOST_PACKAGE_ROOT"/libgbinder*.zst \
-        "$HOST_PACKAGE_ROOT"/python-gbinder*.zst \
-        "$HOST_PACKAGE_ROOT"/waydroid*.zst; } >> "$LOGFILE" 2>&1
+    sudo -S pacman -U --noconfirm "${host_packages[@]}"; } >> "$LOGFILE" 2>&1
 then
     echo Waydroid has been installed!
+
+    if [ "$binder_package_installed" = true ]
+    then
+        echo Registering the bundled Binder kernel module.
+        echo "*** depmod binder_linux ***" >> "$LOGFILE"
+
+        if ! { printf '%s\n' "$current_password" |
+            sudo -S depmod -a "$(uname -r)"; } >> "$LOGFILE" 2>&1
+        then
+            echo Error running depmod for the bundled Binder kernel module. >&2
+            abort_run
+        fi
+
+        if ! modinfo -k "$(uname -r)" binder_linux >> "$LOGFILE" 2>&1
+        then
+            echo The bundled binder_linux module was installed but cannot be found by modinfo. >&2
+            abort_run
+        fi
+
+        echo "Binder module registered: $(modinfo -k "$(uname -r)" -F filename binder_linux)"
+    fi
+
     printf '%s\n' "$current_password" |
         sudo -S systemctl disable waydroid-container.service
 else
     echo Error installing waydroid. Run the script again to install waydroid.
     abort_run
 fi
-
 # firewall config for waydroid0 interface to forward packets for internet to work
 # but first lets enable firewalld - some instance of SteamOS this is disabled / stopped?
 firewalld_was_active=false

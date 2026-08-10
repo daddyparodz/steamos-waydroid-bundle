@@ -79,7 +79,7 @@ if [ -f /home/deck/Android_Waydroid/spoofing/classes.dex ]; then
 	waydroid shell -- sh -c "export CLASSPATH=/system/bin/classes.dex ; app_process / com.android.commands.hid.Hid" &
 
 else
-	rm /var/lib/waydroid/overlay/system/bin/classes.dex
+	rm -f /var/lib/waydroid/overlay/system/bin/classes.dex
 fi
 
-exit
+exit 0

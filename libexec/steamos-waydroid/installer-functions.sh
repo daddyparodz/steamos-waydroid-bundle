@@ -5,6 +5,8 @@ restore_decky_loader () {
 	if [ "${DECKY_LOADER_STOPPED:-false}" = true ]
 	then
 		echo Re-enabling the Decky Loader plugin service.
+		# current_password is supplied by steamos-waydroid-installer.sh.
+		# shellcheck disable=SC2154
 		if printf '%s\n' "$current_password" | \
 			sudo -S systemctl start plugin_loader.service
 		then
@@ -178,6 +180,8 @@ archive_existing_android_state () {
 	fi
 
 	timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+	# Read by the calling installer.
+	# shellcheck disable=SC2034
 	ANDROID_REINSTALL_TIMESTAMP=$timestamp
 	ARCHIVED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.pre-reinstall-$timestamp"
 	ARCHIVED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.pre-reinstall-$timestamp"
@@ -356,10 +360,14 @@ restore_archived_android_state_after_failure () {
 mount_waydroid_var () {
 	# this will initialize and configure custom /var/lib/waydroid
 	# first make sure /var/lib/waydroid is not mounted
+	# current_password is supplied by steamos-waydroid-installer.sh.
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &> /dev/null
-	echo -e "$current_password\n" | sudo -S losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)  &> /dev/null
+	# shellcheck disable=SC2154
+	echo -e "$current_password\n" | sudo -S losetup -d "$(losetup | grep waydroid.img | cut -d ' ' -f1)"  &> /dev/null
 	
 	# prepare the custom /var/lib/waydroid
+	# shellcheck disable=SC2154
 	gunzip -k -f extras/waydroid.img.gz && \
 		mkfs.ext4 -F extras/waydroid.img && \
 		ROOTDEV=$(sudo losetup --find --show extras/waydroid.img) && \
@@ -368,6 +376,7 @@ mount_waydroid_var () {
 
 unmount_waydroid_var () {
 	# this will unmount the custom /var/lib/waydroid
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &> /dev/null
 	local image_path="${1:-}"
 	local loop_device
@@ -381,7 +390,7 @@ unmount_waydroid_var () {
 			fi
 		done < <(echo -e "$current_password\n" | sudo -S losetup -j "$image_path" 2> /dev/null)
 	else
-		echo -e "$current_password\n" | sudo -S losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)  &> /dev/null
+		echo -e "$current_password\n" | sudo -S losetup -d "$(losetup | grep waydroid.img | cut -d ' ' -f1)"  &> /dev/null
 	fi
 }
 
@@ -391,17 +400,22 @@ cleanup_exit () {
 	echo Something went wrong! Performing cleanup. Run the script again to install waydroid.
 	
 	# remove installed packages
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S pacman -R --noconfirm libglibutil libgbinder \
 		python-gbinder waydroid &> /dev/null
 	
 	# unmount the custom /var/lib/waydroid
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &> /dev/null
-	echo -e "$current_password\n" | sudo -S losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)  &> /dev/null
+	# shellcheck disable=SC2154
+	echo -e "$current_password\n" | sudo -S losetup -d "$(losetup | grep waydroid.img | cut -d ' ' -f1)"  &> /dev/null
 
 	# delete the waydroid directories
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S rm -rf /var/lib/waydroid &> /dev/null
 	
 	# delete waydroid config and scripts
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S rm /etc/sudoers.d/zzzzzzzz-waydroid /usr/bin/waydroid* &> /dev/null
 
 	# delete Waydroid Toolbox and Waydroid Update symlinks
@@ -409,7 +423,9 @@ cleanup_exit () {
 	rm ~/Desktop/Waydroid-Toolbox &> /dev/null
 
 	# delete Android_Waydroid folder and enable the readonly
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S rm -rf ~/Android_Waydroid/*.sh ~/Android_Waydroid/config &> /dev/null
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S steamos-readonly enable &> /dev/null
 	
 	# Re-enable Decky if this installer stopped it during preflight.
@@ -448,9 +464,11 @@ install_android_extras () {
 	$WAYDROID_SCRIPT_DIR/venv/bin/pip install -r $WAYDROID_SCRIPT_DIR/requirements.txt &> /dev/null
 
 	echo "$ARM_Choice installation started:"
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S $WAYDROID_SCRIPT_DIR/venv/bin/python3 $WAYDROID_SCRIPT_DIR/main.py -a13 install {$ARM_Choice,widevine}
 
 	echo casualsnek / aleasto waydroid_script done. $ARM_Choice installed.
+	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S rm -rf $WAYDROID_SCRIPT_DIR
 }
 

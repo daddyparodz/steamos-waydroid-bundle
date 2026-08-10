@@ -84,11 +84,12 @@ cleanup() {
 }
 
 show_launch_failure() {
+	local launch_status="$1"
 	local error_details
 
 	error_details="$(tail -n 30 "$LAUNCH_ERROR_LOG" 2>/dev/null || true)"
 	if [ -z "$error_details" ]; then
-		error_details="No diagnostic output was produced."
+		error_details="Cage exited with status $launch_status without diagnostic output."
 	fi
 	cleanup
 	kdialog --error "Waydroid could not finish starting.
@@ -144,7 +145,7 @@ if [ -z "${1:-}" ]; then
 	# Variables inside this single-quoted command are intentionally expanded
 	# by the inner bash process using the positional arguments supplied below.
 	# shellcheck disable=SC2016
-	if ! "$CAGE" -- bash -c '
+	if "$CAGE" -- bash -c '
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
@@ -154,6 +155,7 @@ if [ -z "${1:-}" ]; then
 			--custom-mode "$RESOLUTION"
 
 		/usr/bin/waydroid show-full-ui &
+		readonly WAYDROID_SESSION_PID=$!
 		sleep 10
 
 		waydroid prop set \
@@ -171,9 +173,14 @@ if [ -z "${1:-}" ]; then
 			wait 2>/dev/null || true
 			exit 1
 		fi
+
+		wait "$WAYDROID_SESSION_PID"
 	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" \
 		>"$LAUNCH_ERROR_LOG" 2>&1; then
-		show_launch_failure
+		:
+	else
+		launch_status=$?
+		show_launch_failure "$launch_status"
 	fi
 else
 	PACKAGE="$1"
@@ -181,7 +188,7 @@ else
 	# Variables inside this single-quoted command are intentionally expanded
 	# by the inner bash process using the positional arguments supplied below.
 	# shellcheck disable=SC2016
-	if ! "$CAGE" -- bash -c '
+	if "$CAGE" -- bash -c '
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
@@ -192,6 +199,7 @@ else
 			--custom-mode "$RESOLUTION"
 
 		/usr/bin/waydroid session start &
+		readonly WAYDROID_SESSION_PID=$!
 		sleep 10
 
 		waydroid prop set \
@@ -215,8 +223,12 @@ else
 		sleep 1
 
 		/usr/bin/waydroid show-full-ui &
+		wait "$WAYDROID_SESSION_PID"
 	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$PACKAGE" \
 		>"$LAUNCH_ERROR_LOG" 2>&1; then
-		show_launch_failure
+		:
+	else
+		launch_status=$?
+		show_launch_failure "$launch_status"
 	fi
 fi

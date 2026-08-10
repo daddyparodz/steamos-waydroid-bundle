@@ -13,26 +13,26 @@ sudo sysctl -w kernel.pid_max=65535
 boot_deadline=$((SECONDS + BOOT_TIMEOUT_SECONDS))
 
 while true; do
-    android_ready=$(
-        timeout 5 waydroid shell -- sh -c 'pm path android' 2>/dev/null || true
-    )
+	android_ready=$(
+		timeout 5 waydroid shell -- sh -c 'pm path android' 2>/dev/null || true
+	)
 
-    if [[ "$android_ready" == package:* ]]; then
-        break
-    fi
+	if [[ "$android_ready" == package:* ]]; then
+		break
+	fi
 
-    if ! systemctl is-active --quiet waydroid-container.service; then
-        echo "error: Waydroid container stopped before Android completed boot" >&2
-        systemctl status --no-pager waydroid-container.service >&2 || true
-        exit 1
-    fi
+	if ! systemctl is-active --quiet waydroid-container.service; then
+		echo "error: Waydroid container stopped before Android completed boot" >&2
+		systemctl status --no-pager waydroid-container.service >&2 || true
+		exit 1
+	fi
 
-    if ((SECONDS >= boot_deadline)); then
-        echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
-        exit 124
-    fi
+	if ((SECONDS >= boot_deadline)); then
+		echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
+		exit 124
+	fi
 
-    sleep 5
+	sleep 5
 done
 
 # This are the commands to execute once Android boot is completed

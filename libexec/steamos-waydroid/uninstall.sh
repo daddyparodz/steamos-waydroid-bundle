@@ -11,6 +11,7 @@ WAYDROID_USER_STATE="$HOME/.local/share/waydroid"
 WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid"
 PRESERVATION_CANDIDATE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid-preserved-reset"
+FIREWALL_OWNERSHIP_FILE="$HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env"
 SHORTCUT_MANAGER="$PROJECT_ROOT/extras/icon.py"
 READONLY_DISABLED=false
 FULL_PROCESS_RESET=false
@@ -41,6 +42,9 @@ if [[ ${STEAMOS_WAYDROID_INTERNAL:-} != 1 ]]; then
 	printf 'error: run ./steamos-waydroid-installer.sh with a supported reset option\n' >&2
 	exit 1
 fi
+
+# shellcheck source=firewall-rules.sh
+source "$SCRIPT_DIR/firewall-rules.sh"
 
 reset_log() {
 	local message="$*"
@@ -417,14 +421,72 @@ EOF
 	fi
 fi
 
-printf 'Removing the firewall rules added by the installer...\n'
-sudo systemctl start firewalld.service 2>/dev/null || true
-sudo firewall-cmd --zone=trusted --remove-interface=waydroid0 >/dev/null 2>&1 || true
-sudo firewall-cmd --zone=trusted --remove-port=53/udp >/dev/null 2>&1 || true
-sudo firewall-cmd --zone=trusted --remove-port=67/udp >/dev/null 2>&1 || true
-sudo firewall-cmd --zone=trusted --remove-forward >/dev/null 2>&1 || true
-sudo firewall-cmd --runtime-to-permanent >/dev/null 2>&1 || true
-sudo systemctl stop firewalld.service 2>/dev/null || true
+stage_start firewall-cleanup
+printf 'Removing firewall settings proven to be owned by this installer...\n'
+if systemctl is-active --quiet firewalld.service; then
+	firewall_mode=active
+	firewall_command=(sudo firewall-cmd)
+else
+	firewall_mode=inactive
+	firewall_command=(sudo firewall-offline-cmd)
+fi
+if ! "${firewall_command[@]}" --check-config; then
+	printf 'error: permanent firewalld configuration is invalid; refusing to modify it\n' >&2
+	exit 1
+fi
+
+if load_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
+	for firewall_rule in "${FIREWALL_RULE_KEYS[@]}"; do
+		firewall_rule_is_owned "$firewall_rule" || continue
+
+		if [[ "$firewall_mode" == active ]]; then
+			if firewall_rule_command query "$firewall_rule" \
+				"${firewall_command[@]}" >/dev/null 2>&1; then
+				firewall_rule_command remove "$firewall_rule" \
+					"${firewall_command[@]}"
+			else
+				firewall_query_status=$?
+				if ((firewall_query_status != 1)); then
+					printf 'error: could not query runtime firewall rule: %s\n' \
+						"$firewall_rule" >&2
+					exit 1
+				fi
+			fi
+			permanent_command=(sudo firewall-cmd --permanent)
+		else
+			permanent_command=("${firewall_command[@]}")
+		fi
+
+		if firewall_rule_command query "$firewall_rule" \
+			"${permanent_command[@]}" >/dev/null 2>&1; then
+			firewall_rule_command remove "$firewall_rule" \
+				"${permanent_command[@]}"
+		else
+			firewall_query_status=$?
+			if ((firewall_query_status != 1)); then
+				printf 'error: could not query permanent firewall rule: %s\n' \
+					"$firewall_rule" >&2
+				exit 1
+			fi
+		fi
+	done
+
+	if ! "${firewall_command[@]}" --check-config; then
+		printf 'error: firewalld configuration failed validation after targeted cleanup\n' >&2
+		exit 1
+	fi
+	rm -f -- "$FIREWALL_OWNERSHIP_FILE"
+	stage_complete firewall-cleanup "service=$firewall_mode"
+else
+	ownership_status=$?
+	if ((ownership_status == 2)); then
+		printf 'error: invalid firewall ownership record; refusing firewall cleanup: %s\n' \
+			"$FIREWALL_OWNERSHIP_FILE" >&2
+		exit 1
+	fi
+	printf 'WARNING: no firewall ownership record exists; leaving trusted-zone settings unchanged.\n' >&2
+	reset_log "stage=firewall-cleanup skipped reason=ownership-unknown service=$firewall_mode"
+fi
 
 printf 'Unlocking SteamOS for package and system-file cleanup...\n'
 stage_start readonly-disable
@@ -448,21 +510,13 @@ for binder_package in steamos-waydroid-binder binder_linux-dkms; do
 	fi
 done
 
-# Waydroid has already been stopped above, so unload our out-of-tree Binder
-# module before removing its package. Do not touch the in-tree "binder" driver
-# used by SteamOS kernels that provide Binder themselves.
+# Do not unload binder_linux from the running kernel during reset. The module
+# remains resident safely after its on-disk package is removed and disappears
+# at the next ordinary boot. Live unloading adds kernel risk and is unnecessary
+# for host cleanup.
 if [[ "$binder_package_installed" == true ]] && lsmod | awk '$1 == "binder_linux" {found=1} END {exit !found}'; then
-	stage_start binder-unload
-	printf 'Unloading the bundled Binder kernel module...\n'
-	if ! sudo modprobe -r binder_linux; then
-		printf 'error: binder_linux is still in use; Binder package removal stopped\n' >&2
-		exit 1
-	fi
-	if lsmod | awk '$1 == "binder_linux" {found=1} END {exit !found}'; then
-		printf 'error: binder_linux remains loaded after modprobe -r\n' >&2
-		exit 1
-	fi
-	stage_complete binder-unload
+	printf 'Leaving binder_linux loaded in the running kernel until the next ordinary boot.\n'
+	reset_log "stage=binder-live-state retained"
 fi
 
 for package in waydroid python-gbinder libgbinder libglibutil steamos-waydroid-binder binder_linux-dkms; do
@@ -492,6 +546,7 @@ if [[ "$binder_package_installed" == true ]]; then
 	stage_complete refresh-module-index
 fi
 
+stage_start remove-system-files
 sudo rm -f -- \
 	/etc/sudoers.d/zzzzzzzz-waydroid \
 	/etc/modules-load.d/waydroid.conf \
@@ -502,6 +557,7 @@ sudo rm -f -- \
 	/usr/bin/waydroid-mount \
 	/usr/bin/waydroid-firewall
 sudo rm -rf -- /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra
+stage_complete remove-system-files
 
 if [[ "$KEEP_ANDROID_STATE" == true ]]; then
 	printf 'Removing per-user host integration while retaining Android user data...\n'
@@ -539,8 +595,10 @@ if [[ -d "$applications" ]]; then
 	find "$applications" -maxdepth 1 -type f -name 'waydroid*.desktop' -delete
 fi
 
+stage_start readonly-enable
 sudo steamos-readonly enable
 READONLY_DISABLED=false
+stage_complete readonly-enable
 
 if [[ "$KEEP_ANDROID_STATE" == true ]]; then
 	printf 'Restoring the preserved Android image...\n'
@@ -591,7 +649,13 @@ cat <<'EOF'
 
 Reset complete.
 
-Run the installer locally from Desktop Mode when you are ready to reinstall.
+IMPORTANT: fully restart SteamOS before doing anything else. Do not launch
+Waydroid, reinstall, repair, or run another reset in this boot. A restart lets
+the running kernel discard any retained Binder module and establishes a clean
+post-uninstall system state.
+
+After the restart, run the installer locally from Desktop Mode when you are
+ready to reinstall.
 EOF
 
 if [[ "$MANUAL_SHORTCUT_REMOVAL" == true ]]; then
@@ -613,9 +677,9 @@ elif [[ "$KEEP_ANDROID_STATE" == true ]]; then
 	printf 'Android applications, settings and logins were preserved at: %s\n' \
 		"$WAYDROID_USER_STATE"
 	if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
-		printf 'Configure artifacts, then run the normal installer to test first-time host setup.\n'
+		printf 'After restarting, configure artifacts, then run the normal installer to test first-time host setup.\n'
 	else
-		printf 'Run the normal installer from this checkout to restore host integration.\n'
+		printf 'After restarting, run the normal installer from this checkout to restore host integration.\n'
 	fi
 else
 	printf 'Android data was deleted. The Git checkout and verified target-built bundles were retained.\n'

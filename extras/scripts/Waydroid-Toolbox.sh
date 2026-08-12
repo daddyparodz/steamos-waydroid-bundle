@@ -52,23 +52,88 @@ while true; do
 		exit
 
 	elif [ "$Choice" == "NETWORK" ]; then
-		echo -e "$PASSWORD\n" | sudo -S systemctl start firewalld
+		if ! installer_path="$(find_waydroid_installer)"; then
+			zenity --error --title "Waydroid Toolbox" \
+				--text "The installer checkout could not be found; firewall configuration was not changed."
+			continue
+		fi
+		installer_root="$(dirname -- "$installer_path")"
+		# shellcheck source=/dev/null
+		source "$installer_root/libexec/steamos-waydroid/firewall-rules.sh"
+		firewall_ownership_file="$HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env"
+		toolbox_firewall_sudo() {
+			printf '%s\n' "$PASSWORD" | sudo -S "$@"
+		}
 
-		# let's clear the existing config first
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --remove-interface=waydroid0 &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --remove-port=53/udp &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --remove-port=67/udp &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --remove-forward &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --runtime-to-permanent &>/dev/null
-
-		# firewall config for waydroid0 interface to forward packets for internet to work
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --add-interface=waydroid0 &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --add-port=53/udp &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --add-port=67/udp &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --zone=trusted --add-forward &>/dev/null
-		echo -e "$PASSWORD\n" | sudo -S firewall-cmd --runtime-to-permanent &>/dev/null
-
-		echo -e "$PASSWORD\n" | sudo -S systemctl stop firewalld
+		firewalld_was_active=false
+		if systemctl is-active --quiet firewalld.service; then
+			firewalld_was_active=true
+			firewall_validation_command=(toolbox_firewall_sudo firewall-cmd)
+		else
+			firewall_validation_command=(toolbox_firewall_sudo firewall-offline-cmd)
+		fi
+		network_failed=false
+		firewalld_started_by_toolbox=false
+		if ! "${firewall_validation_command[@]}" --check-config; then
+			network_failed=true
+		elif load_firewall_ownership "$firewall_ownership_file"; then
+			:
+		elif [ $? -eq 2 ]; then
+			network_failed=true
+		fi
+		if [ "$network_failed" != true ] &&
+			! toolbox_firewall_sudo systemctl start firewalld; then
+			network_failed=true
+		elif [ "$network_failed" != true ]; then
+			firewalld_started_by_toolbox=true
+		fi
+		if [ "$network_failed" != true ]; then
+			for firewall_rule in "${FIREWALL_RULE_KEYS[@]}"; do
+				if firewall_rule_command query "$firewall_rule" \
+					toolbox_firewall_sudo firewall-cmd --permanent >/dev/null 2>&1; then
+					:
+				else
+					firewall_query_status=$?
+					if [ "$firewall_query_status" -ne 1 ] ||
+						! firewall_rule_command add "$firewall_rule" \
+							toolbox_firewall_sudo firewall-cmd --permanent; then
+						network_failed=true
+						break
+					fi
+					firewall_mark_rule_owned "$firewall_rule"
+				fi
+				if firewall_rule_command query "$firewall_rule" \
+					toolbox_firewall_sudo firewall-cmd >/dev/null 2>&1; then
+					:
+				else
+					firewall_query_status=$?
+					if [ "$firewall_query_status" -ne 1 ] ||
+						! firewall_rule_command add "$firewall_rule" \
+							toolbox_firewall_sudo firewall-cmd; then
+						network_failed=true
+						break
+					fi
+				fi
+			done
+		fi
+		if [ "$network_failed" != true ] &&
+			! toolbox_firewall_sudo firewall-cmd --check-config; then
+			network_failed=true
+		fi
+		if [ "$network_failed" != true ] &&
+			! write_firewall_ownership "$firewall_ownership_file"; then
+			network_failed=true
+		fi
+		if [ "$firewalld_was_active" != true ] &&
+			[ "$firewalld_started_by_toolbox" = true ]; then
+			toolbox_firewall_sudo systemctl stop firewalld || network_failed=true
+		fi
+		unset -f toolbox_firewall_sudo
+		if [ "$network_failed" = true ]; then
+			zenity --error --title "Waydroid Toolbox" \
+				--text "Firewalld validation or targeted Waydroid rule setup failed. No broad firewall save was attempted."
+			continue
+		fi
 
 		zenity --warning --title "Waydroid Toolbox" --text "Waydroid network configuration completed!" --width 350 --height 75
 

@@ -44,23 +44,31 @@ setup_case() {
 	MOCK_BIN="$CASE_ROOT/bin"
 	MOCK_STATE="$CASE_ROOT/state"
 	MOCK_LOG="$CASE_ROOT/commands.log"
+	MOCK_FIREWALL_ROOT="$CASE_ROOT/firewalld"
 	mkdir -p \
 		"$CASE_HOME/Android_Waydroid" \
 		"$CASE_HOME/.local/share/waydroid" \
 		"$CASE_REPO/libexec/steamos-waydroid" \
 		"$CASE_REPO/extras" \
-		"$MOCK_BIN" "$MOCK_STATE"
+		"$MOCK_BIN" "$MOCK_STATE" \
+		"$MOCK_FIREWALL_ROOT/zones" "$MOCK_FIREWALL_ROOT/policies"
 	printf 'android image\n' >"$CASE_HOME/Android_Waydroid/waydroid.img"
 	cp "$REPO_ROOT/libexec/steamos-waydroid/uninstall.sh" \
 		"$CASE_REPO/libexec/steamos-waydroid/uninstall.sh"
+	cp "$REPO_ROOT/libexec/steamos-waydroid/firewall-rules.sh" \
+		"$CASE_REPO/libexec/steamos-waydroid/firewall-rules.sh"
 	printf '#!/usr/bin/env python3\n' >"$CASE_REPO/extras/icon.py"
 	chmod +x "$CASE_REPO/libexec/steamos-waydroid/uninstall.sh"
 	: >"$MOCK_LOG"
 	printf '%s\n' \
 		waydroid python-gbinder libgbinder libglibutil steamos-waydroid-binder \
 		>"$MOCK_STATE/packages"
+	: >"$MOCK_STATE/runtime_rules"
+	: >"$MOCK_STATE/permanent_rules"
+	printf '<zone name="trusted"/>\n' >"$MOCK_FIREWALL_ROOT/zones/trusted.xml"
 	for command_name in \
-		id grep sudo systemctl pgrep findmnt umount losetup firewall-cmd logger \
+		id grep sudo systemctl pgrep findmnt umount losetup firewall-cmd \
+		firewall-offline-cmd logger \
 		sync depmod steamos-readonly lsmod modprobe pacman rm; do
 		ln -s "$REPO_ROOT/tests/mocks/uninstall-command.sh" "$MOCK_BIN/$command_name"
 	done
@@ -75,6 +83,7 @@ run_uninstall() {
 			PATH="$MOCK_BIN:/usr/bin:/bin" \
 			MOCK_LOG="$MOCK_LOG" \
 			MOCK_STATE="$MOCK_STATE" \
+			MOCK_FIREWALL_ROOT="$MOCK_FIREWALL_ROOT" \
 			SCENARIO="$scenario" \
 			STEAMOS_WAYDROID_INTERNAL=1 \
 			"$CASE_REPO/libexec/steamos-waydroid/uninstall.sh" \
@@ -86,6 +95,37 @@ run_uninstall() {
 latest_reset_log() {
 	find "$CASE_HOME/.local/state/steamos-waydroid" -type f -name 'reset-*.log' \
 		-print -quit
+}
+
+configure_firewall_case() {
+	local rules_present="$1"
+	local fixture
+
+	mkdir -p "$CASE_HOME/.local/share/steamos-waydroid-installer"
+	cat >"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" <<'EOF'
+version=1
+interface=true
+port_53=true
+port_67=true
+forward=true
+EOF
+	if [[ "$rules_present" == true ]]; then
+		printf '%s\n' interface port_53 port_67 forward >"$MOCK_STATE/runtime_rules"
+		cp "$MOCK_STATE/runtime_rules" "$MOCK_STATE/permanent_rules"
+	fi
+	for fixture in \
+		block dmz drop external home internal nm-shared public work; do
+		printf '<zone name="%s"><service name="custom-%s"/></zone>\n' \
+			"$fixture" "$fixture" >"$MOCK_FIREWALL_ROOT/zones/$fixture.xml"
+	done
+	printf '<policy name="allow-host-ipv6"><service name="custom"/></policy>\n' \
+		>"$MOCK_FIREWALL_ROOT/policies/allow-host-ipv6.xml"
+	find "$MOCK_FIREWALL_ROOT" -type f ! -name trusted.xml -print0 |
+		sort -z | xargs -0 sha256sum >"$CASE_ROOT/firewall-before.sha256"
+}
+
+assert_unrelated_firewall_unchanged() {
+	sha256sum --check --status "$CASE_ROOT/firewall-before.sha256"
 }
 
 run_failure_case() {
@@ -112,9 +152,15 @@ test_loop_remains() {
 	run_failure_case loop-remains loop_remains 'Android state is still attached'
 }
 
-test_binder_refuses() {
-	run_failure_case binder-refuses binder_refuses 'binder_linux is still in use' || return 1
-	assert_log 'enable' "$MOCK_STATE/readonly" || return 1
+test_loaded_binder_is_not_unloaded() {
+	setup_case binder-retained
+	run_uninstall binder_refuses
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	assert_log 'stage=binder-live-state retained' "$CASE_ROOT/output" || return 1
+	if grep -Eq '^(sudo )?modprobe -r binder_linux$' "$MOCK_LOG"; then
+		printf 'not ok - reset attempted to unload live binder_linux\n' >&2
+		return 1
+	fi
 }
 
 test_package_failure_partway() {
@@ -167,6 +213,7 @@ test_success_removes_explicit_packages_separately() {
 	assert_log '^pacman -R --noconfirm python-gbinder$' "$MOCK_LOG" || return 1
 	assert_log '^pacman -R --noconfirm libgbinder$' "$MOCK_LOG" || return 1
 	assert_log '^pacman -R --noconfirm libglibutil$' "$MOCK_LOG" || return 1
+	assert_log 'fully restart SteamOS before doing anything else' "$CASE_ROOT/output" || return 1
 	if grep -Eq 'pacman -Rn?s|pacman -R .* waydroid .*python-gbinder' "$MOCK_LOG"; then
 		printf 'not ok - package removals were combined or used -s\n' >&2
 		return 1
@@ -174,17 +221,121 @@ test_success_removes_explicit_packages_separately() {
 	assert_log 'stage=reset complete' "$(latest_reset_log)" || return 1
 }
 
+test_firewall_active_targeted_cleanup() {
+	setup_case firewall-active
+	configure_firewall_case true
+	run_uninstall firewall_active
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	[[ ! -s "$MOCK_STATE/runtime_rules" && ! -s "$MOCK_STATE/permanent_rules" ]] || return 1
+	assert_unrelated_firewall_unchanged || return 1
+	assert_log '^firewall-cmd --check-config$' "$MOCK_LOG" || return 1
+	assert_log '^firewall-cmd --zone=trusted --remove-forward$' "$MOCK_LOG" || return 1
+	assert_log '^firewall-cmd --permanent --zone=trusted --remove-forward$' "$MOCK_LOG" || return 1
+	if grep -Eq '^systemctl (start|stop) firewalld' "$MOCK_LOG"; then
+		printf 'not ok - active firewalld service state was changed\n' >&2
+		return 1
+	fi
+}
+
+test_firewall_inactive_offline_cleanup() {
+	setup_case firewall-inactive
+	configure_firewall_case true
+	run_uninstall firewall_inactive
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	[[ ! -s "$MOCK_STATE/permanent_rules" ]] || return 1
+	assert_unrelated_firewall_unchanged || return 1
+	assert_log '^firewall-offline-cmd --check-config$' "$MOCK_LOG" || return 1
+	assert_log '^firewall-offline-cmd --zone=trusted --remove-forward$' "$MOCK_LOG" || return 1
+	if grep -Eq '^systemctl (start|stop) firewalld' "$MOCK_LOG"; then
+		printf 'not ok - inactive firewalld service state was changed\n' >&2
+		return 1
+	fi
+}
+
+test_firewall_absent_rules_are_idempotent() {
+	setup_case firewall-absent
+	configure_firewall_case false
+	run_uninstall firewall_active_absent
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	assert_unrelated_firewall_unchanged || return 1
+	if grep -Eq 'firewall-(cmd|offline-cmd).*--remove-' "$MOCK_LOG"; then
+		printf 'not ok - absent firewall rules triggered removals\n' >&2
+		return 1
+	fi
+}
+
+test_firewall_unowned_forward_is_preserved() {
+	setup_case firewall-unowned-forward
+	configure_firewall_case true
+	sed -i 's/^forward=true$/forward=false/' \
+		"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env"
+	run_uninstall firewall_active
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	[[ "$(cat "$MOCK_STATE/runtime_rules")" == forward ]] || return 1
+	[[ "$(cat "$MOCK_STATE/permanent_rules")" == forward ]] || return 1
+	if grep -Eq 'firewall-cmd .*--remove-forward' "$MOCK_LOG"; then
+		printf 'not ok - pre-existing unowned forward setting was removed\n' >&2
+		return 1
+	fi
+	assert_unrelated_firewall_unchanged || return 1
+}
+
+test_firewall_invalid_configuration_fails_closed() {
+	setup_case firewall-invalid
+	configure_firewall_case true
+	run_uninstall firewall_invalid
+	[[ $RUN_STATUS -ne 0 ]] || return 1
+	assert_file "$CASE_HOME/Android_Waydroid/waydroid.img" || return 1
+	assert_file "$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" || return 1
+	assert_unrelated_firewall_unchanged || return 1
+	assert_log 'configuration is invalid; refusing to modify it' "$CASE_ROOT/output" || return 1
+	if grep -Eq 'firewall-(cmd|offline-cmd).*--remove-' "$MOCK_LOG"; then
+		printf 'not ok - invalid firewall configuration was modified\n' >&2
+		return 1
+	fi
+}
+
+test_firewall_cleanup_second_reset_is_safe() {
+	setup_case firewall-second-reset
+	configure_firewall_case true
+	run_uninstall firewall_active
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	first_removal_count="$(grep -Ec 'firewall-cmd .*--remove-' "$MOCK_LOG")"
+	run_uninstall firewall_active
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	second_removal_count="$(grep -Ec 'firewall-cmd .*--remove-' "$MOCK_LOG")"
+	[[ "$second_removal_count" == "$first_removal_count" ]] || return 1
+	assert_unrelated_firewall_unchanged || return 1
+}
+
+test_no_runtime_to_permanent_in_project_firewall_paths() {
+	if rg -n -- '--runtime-to-permanent' \
+		"$REPO_ROOT/libexec/steamos-waydroid/uninstall.sh" \
+		"$REPO_ROOT/steamos-waydroid-installer.sh" \
+		"$REPO_ROOT/extras/scripts/Waydroid-Toolbox.sh"; then
+		printf 'not ok - broad runtime-to-permanent operation remains\n' >&2
+		return 1
+	fi
+}
+
 tests=(
 	test_service_stop_failure
 	test_nested_mount_remains
 	test_loop_remains
-	test_binder_refuses
+	test_loaded_binder_is_not_unloaded
 	test_package_failure_partway
 	test_term_restores_state
 	test_int_restores_state
 	test_existing_staging_is_recovered
 	test_ambiguous_staging_is_refused
 	test_success_removes_explicit_packages_separately
+	test_firewall_active_targeted_cleanup
+	test_firewall_inactive_offline_cleanup
+	test_firewall_absent_rules_are_idempotent
+	test_firewall_unowned_forward_is_preserved
+	test_firewall_invalid_configuration_fails_closed
+	test_firewall_cleanup_second_reset_is_safe
+	test_no_runtime_to_permanent_in_project_firewall_paths
 )
 
 for test_name in "${tests[@]}"; do

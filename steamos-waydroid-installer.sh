@@ -82,10 +82,13 @@ ANDROID_HOME=$HOME/Android_Waydroid
 WAYDROID_IMAGE=$ANDROID_HOME/waydroid.img
 WAYDROID_USER_STATE=$HOME/.local/share/waydroid
 WAYDROID_LEGACY_USER_STATE=$HOME/waydroid
+FIREWALL_OWNERSHIP_FILE=$HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env
 # shellcheck source=libexec/steamos-waydroid/installer-functions.sh
 source "$DECK_RUNTIME/installer-functions.sh"
 # shellcheck source=libexec/steamos-waydroid/installer-sanity-checks.sh
 source "$DECK_RUNTIME/installer-sanity-checks.sh"
+# shellcheck source=libexec/steamos-waydroid/firewall-rules.sh
+source "$DECK_RUNTIME/firewall-rules.sh"
 if [ "$FULL_UNINSTALL_MODE" = true ]; then
 	STEAMOS_WAYDROID_INTERNAL=1 \
 		"$DECK_RUNTIME/uninstall.sh" --full-process
@@ -512,29 +515,84 @@ else
 	echo Error installing waydroid. Run the script again to install waydroid.
 	abort_run
 fi
-# firewall config for waydroid0 interface to forward packets for internet to work
-# but first lets enable firewalld - some instance of SteamOS this is disabled / stopped?
+# Configure only the four trusted-zone settings used by Waydroid. Record which
+# permanent settings this installer introduced so uninstall never removes a
+# pre-existing user rule.
 firewalld_was_active=false
 if systemctl is-active --quiet firewalld.service; then
 	firewalld_was_active=true
 fi
-echo -e "$current_password\n" | sudo -S systemctl start firewalld
-echo -e "$current_password\n" | sudo -S firewall-cmd --zone=trusted --add-interface=waydroid0 &>/dev/null
-echo -e "$current_password\n" | sudo -S firewall-cmd --zone=trusted --add-port={53,67}/udp &>/dev/null
-echo -e "$current_password\n" | sudo -S firewall-cmd --zone=trusted --add-forward &>/dev/null
-if [ "$REPAIR_MODE" = true ]; then
-	# Persist only this project's rules. Do not copy unrelated runtime firewall
-	# changes into the permanent configuration during a repair.
-	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-interface=waydroid0 &>/dev/null
-	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-port=53/udp &>/dev/null
-	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-port=67/udp &>/dev/null
-	echo -e "$current_password\n" | sudo -S firewall-cmd --permanent --zone=trusted --add-forward &>/dev/null
+firewall_sudo() {
+	printf '%s\n' "$current_password" | sudo -S "$@"
+}
+if [ "$firewalld_was_active" = true ]; then
+	if ! firewall_sudo firewall-cmd --check-config >>"$LOGFILE" 2>&1; then
+		echo 'Permanent firewalld configuration is invalid; refusing to modify it.' >&2
+		abort_run
+	fi
 else
-	echo -e "$current_password\n" | sudo -S firewall-cmd --runtime-to-permanent &>/dev/null
+	if ! firewall_sudo firewall-offline-cmd --check-config >>"$LOGFILE" 2>&1; then
+		echo 'Permanent firewalld configuration is invalid; refusing to modify it.' >&2
+		abort_run
+	fi
+fi
+if load_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
+	:
+else
+	ownership_status=$?
+	if [ "$ownership_status" -eq 2 ]; then
+		echo Invalid firewall ownership record: "$FIREWALL_OWNERSHIP_FILE" >&2
+		abort_run
+	fi
+fi
+if ! firewall_sudo systemctl start firewalld; then
+	echo Could not start firewalld to configure Waydroid networking. >&2
+	abort_run
+fi
+firewall_setup_failed=false
+for firewall_rule in "${FIREWALL_RULE_KEYS[@]}"; do
+	if firewall_rule_command query "$firewall_rule" \
+		firewall_sudo firewall-cmd --permanent >/dev/null 2>&1; then
+		:
+	else
+		firewall_query_status=$?
+		if [ "$firewall_query_status" -ne 1 ] ||
+			! firewall_rule_command add "$firewall_rule" \
+				firewall_sudo firewall-cmd --permanent >>"$LOGFILE" 2>&1; then
+			firewall_setup_failed=true
+			break
+		fi
+		firewall_mark_rule_owned "$firewall_rule"
+	fi
+	if firewall_rule_command query "$firewall_rule" \
+		firewall_sudo firewall-cmd >/dev/null 2>&1; then
+		:
+	else
+		firewall_query_status=$?
+		if [ "$firewall_query_status" -ne 1 ] ||
+			! firewall_rule_command add "$firewall_rule" \
+				firewall_sudo firewall-cmd >>"$LOGFILE" 2>&1; then
+			firewall_setup_failed=true
+			break
+		fi
+	fi
+done
+if [ "$firewall_setup_failed" != true ] &&
+	! firewall_sudo firewall-cmd --check-config >>"$LOGFILE" 2>&1; then
+	firewall_setup_failed=true
+fi
+if [ "$firewall_setup_failed" != true ] &&
+	! write_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
+	firewall_setup_failed=true
 fi
 if [ "$firewalld_was_active" != true ]; then
-	echo -e "$current_password\n" | sudo -S systemctl stop firewalld
+	firewall_sudo systemctl stop firewalld || firewall_setup_failed=true
 fi
+if [ "$firewall_setup_failed" = true ]; then
+	echo Failed to configure only the required Waydroid firewall settings. >&2
+	abort_run
+fi
+unset -f firewall_sudo
 
 # Recreate user-side host integration in both fresh-install and repair modes.
 # These files live outside the Android image and are safe to refresh.

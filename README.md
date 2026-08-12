@@ -155,6 +155,18 @@ interrupted after staging the Android image, the next keep-Android reset safely
 restores the staged image before retrying. If both active and staged copies
 exist, it stops without overwriting either copy.
 
+Firewalld cleanup validates the permanent configuration and removes only rules
+recorded as having been introduced by this installer. It uses targeted runtime
+and permanent operations when firewalld is active, or `firewall-offline-cmd`
+when it is inactive, and preserves the service's initial state. Installations
+created before ownership tracking leave their existing trusted-zone rules
+unchanged during reset rather than risk removing pre-existing user settings.
+
+After any successful uninstall or reset, fully restart SteamOS before launching
+Waydroid, reinstalling, repairing, or running another reset. Reset deliberately
+does not unload a live out-of-tree Binder module; the restart discards it and
+provides a clean boundary before host integration is installed again.
+
 ## Reinstalling Android
 
 `--reinstall-android` is different from repair. When existing state is found,

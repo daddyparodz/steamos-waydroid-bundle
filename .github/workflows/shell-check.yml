@@ -61,3 +61,6 @@ jobs:
         run: |
           set -euo pipefail
           shfmt -d .
+
+      - name: Run uninstall failure-path tests
+        run: tests/test-uninstall.sh

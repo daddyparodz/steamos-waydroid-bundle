@@ -148,6 +148,13 @@ script never stops or restarts Steam. If Steam is running, uninstall and reset
 skip direct shortcut-database changes and continue; remove any remaining
 Waydroid or Nested Desktop shortcut manually from Steam in Gaming Mode.
 
+Host reset writes immediately flushed stage diagnostics to
+`~/.local/state/steamos-waydroid/reset-*.log` and the system journal. It removes
+installer-owned packages individually without orphan cleanup. If reset is
+interrupted after staging the Android image, the next keep-Android reset safely
+restores the staged image before retrying. If both active and staged copies
+exist, it stops without overwriting either copy.
+
 ## Reinstalling Android
 
 `--reinstall-android` is different from repair. When existing state is found,

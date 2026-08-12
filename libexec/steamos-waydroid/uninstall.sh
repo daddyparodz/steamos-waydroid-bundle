@@ -9,6 +9,8 @@ ANDROID_HOME="$HOME/Android_Waydroid"
 ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
 WAYDROID_USER_STATE="$HOME/.local/share/waydroid"
 WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
+STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid"
+PRESERVATION_CANDIDATE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid-preserved-reset"
 SHORTCUT_MANAGER="$PROJECT_ROOT/extras/icon.py"
 READONLY_DISABLED=false
 FULL_PROCESS_RESET=false
@@ -19,6 +21,7 @@ PRESENT_ANDROID_USER_STATE=()
 ANDROID_STATE_FILES=()
 PRESERVED_ANDROID_FILES=()
 MANUAL_SHORTCUT_REMOVAL=false
+RESET_LOG=""
 
 if [[ ${1:-} == --full-process ]]; then
 	FULL_PROCESS_RESET=true
@@ -39,10 +42,53 @@ if [[ ${STEAMOS_WAYDROID_INTERNAL:-} != 1 ]]; then
 	exit 1
 fi
 
+reset_log() {
+	local message="$*"
+	local timestamp
+
+	timestamp="$(date --iso-8601=seconds)"
+	if [[ -z "$RESET_LOG" ]]; then
+		printf '%s RESET %s\n' "$timestamp" "$message" >&2
+		return 0
+	fi
+	if ! printf '%s RESET %s\n' "$timestamp" "$message" | tee -a "$RESET_LOG"; then
+		printf 'warning: could not append reset diagnostics to %s\n' "$RESET_LOG" >&2
+	fi
+	# Closing the append for each line flushes userspace buffers. Ask the kernel
+	# to persist the file as well so the last completed stage survives power loss.
+	sync -f "$RESET_LOG" 2>/dev/null || sync 2>/dev/null || true
+	logger --tag steamos-waydroid-reset -- "RESET $message" 2>/dev/null || true
+}
+
+stage_start() {
+	reset_log "stage=$1 start${2:+ $2}"
+}
+
+stage_complete() {
+	reset_log "stage=$1 complete${2:+ $2}"
+}
+
+move_android_state() {
+	local source_file="$1"
+	local destination_file="$2"
+
+	# Both directories are deck-owned. Moving even a root-owned regular file
+	# only requires directory permissions and preserves its existing ownership.
+	if ! mv -- "$source_file" "$destination_file"; then
+		printf 'error: could not move Android state without elevated privileges: %s\n' \
+			"$source_file" >&2
+		return 1
+	fi
+}
+
 restore_readonly() {
 	if [[ "$READONLY_DISABLED" == true ]]; then
 		printf '\nRe-enabling the SteamOS read-only filesystem...\n'
-		sudo steamos-readonly enable || true
+		if sudo steamos-readonly enable; then
+			READONLY_DISABLED=false
+		else
+			reset_log "stage=readonly-enable failed"
+		fi
 	fi
 }
 
@@ -66,7 +112,7 @@ restore_android_files() {
 	for index in "${!PRESERVED_ANDROID_FILES[@]}"; do
 		preserved_file=${PRESERVED_ANDROID_FILES[$index]}
 		destination_file=${ANDROID_STATE_FILES[$index]}
-		sudo mv -- "$preserved_file" "$destination_file"
+		move_android_state "$preserved_file" "$destination_file"
 	done
 	rmdir -- "$PRESERVATION_ROOT" 2>/dev/null || true
 	PRESERVATION_ROOT=""
@@ -74,10 +120,21 @@ restore_android_files() {
 }
 
 cleanup() {
-	restore_android_files || true
+	local exit_status=$?
+	trap - EXIT HUP INT TERM
+	if ((exit_status != 0)); then
+		reset_log "stage=reset aborted status=$exit_status"
+	fi
+	if ! restore_android_files; then
+		reset_log "stage=restore-android failed preserved=$PRESERVATION_ROOT"
+	fi
 	restore_readonly
+	return "$exit_status"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ "$(id -un)" != deck ]]; then
 	printf 'error: run this script as the deck user, not as root\n' >&2
@@ -89,7 +146,60 @@ if [[ ! -r /etc/os-release ]] || ! grep -q '^ID=steamos$' /etc/os-release; then
 	exit 1
 fi
 
+mkdir -p -- "$STATE_ROOT"
+chmod 0700 "$STATE_ROOT"
+RESET_LOG="$STATE_ROOT/reset-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
+: >"$RESET_LOG"
+chmod 0600 "$RESET_LOG"
+reset_log "stage=preflight start mode=${1:---purge-android}"
+
 if [[ "$KEEP_ANDROID_STATE" == true ]]; then
+	if [[ -e "$PRESERVATION_CANDIDATE" || -L "$PRESERVATION_CANDIDATE" ]]; then
+		stage_start recover-interrupted-reset
+		if [[ ! -d "$PRESERVATION_CANDIDATE" || -L "$PRESERVATION_CANDIDATE" ]]; then
+			printf 'error: preservation staging path is not a real directory: %s\n' \
+				"$PRESERVATION_CANDIDATE" >&2
+			exit 1
+		fi
+		shopt -s nullglob dotglob
+		interrupted_files=("$PRESERVATION_CANDIDATE"/*)
+		shopt -u nullglob dotglob
+		if ((${#interrupted_files[@]} == 0)); then
+			printf 'error: empty preservation staging directory requires manual inspection: %s\n' \
+				"$PRESERVATION_CANDIDATE" >&2
+			exit 1
+		fi
+		for preserved_file in "${interrupted_files[@]}"; do
+			case "$(basename -- "$preserved_file")" in
+			waydroid.img | waydroid.img.pre-reinstall-* | waydroid.img.failed-reinstall-*) ;;
+			*)
+				printf 'error: unexpected file in preservation staging directory: %s\n' \
+					"$preserved_file" >&2
+				exit 1
+				;;
+			esac
+			if [[ ! -f "$preserved_file" || -L "$preserved_file" ]]; then
+				printf 'error: preserved Android state is not a regular file: %s\n' \
+					"$preserved_file" >&2
+				exit 1
+			fi
+			destination_file="$ANDROID_HOME/$(basename -- "$preserved_file")"
+			if [[ -e "$destination_file" || -L "$destination_file" ]]; then
+				printf 'error: both active and preserved Android state exist; refusing to overwrite either:\n' >&2
+				printf '  active:    %s\n  preserved: %s\n' \
+					"$destination_file" "$preserved_file" >&2
+				exit 1
+			fi
+		done
+		mkdir -p -- "$ANDROID_HOME"
+		for preserved_file in "${interrupted_files[@]}"; do
+			destination_file="$ANDROID_HOME/$(basename -- "$preserved_file")"
+			move_android_state "$preserved_file" "$destination_file"
+		done
+		rmdir -- "$PRESERVATION_CANDIDATE"
+		stage_complete recover-interrupted-reset
+	fi
+
 	if [[ (-e "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE") &&
 		(! -f "$ANDROID_IMAGE" || -L "$ANDROID_IMAGE") ]]; then
 		printf 'error: preservation requires a regular Android image: %s\n' \
@@ -112,8 +222,8 @@ if [[ "$KEEP_ANDROID_STATE" == true ]]; then
 	done
 	shopt -u nullglob
 	if ((${#ANDROID_STATE_FILES[@]} > 0)); then
-		preservation_candidate="$HOME/.local/state/steamos-waydroid-preserved-reset"
-		if [[ -e "$preservation_candidate" ]]; then
+		preservation_candidate="$PRESERVATION_CANDIDATE"
+		if [[ -e "$preservation_candidate" || -L "$preservation_candidate" ]]; then
 			printf 'error: preservation staging path already exists: %s\n' \
 				"$preservation_candidate" >&2
 			printf 'Inspect or recover it before retrying this reset.\n' >&2
@@ -122,9 +232,24 @@ if [[ "$KEEP_ANDROID_STATE" == true ]]; then
 	fi
 	for user_state_path in "$WAYDROID_USER_STATE" "$WAYDROID_LEGACY_USER_STATE"; do
 		if [[ -e "$user_state_path" || -L "$user_state_path" ]]; then
+			if [[ ! -d "$user_state_path" ]]; then
+				printf 'error: Android user state is not a directory: %s\n' \
+					"$user_state_path" >&2
+				exit 1
+			fi
 			PRESENT_ANDROID_USER_STATE+=("$user_state_path")
 		fi
 	done
+	if [[ -f "$ANDROID_IMAGE" && ${#PRESENT_ANDROID_USER_STATE[@]} -eq 0 ]]; then
+		printf 'error: Android image exists without its matching user-data directory.\n' >&2
+		printf 'Refusing to preserve only the image; restore Android user data before retrying.\n' >&2
+		exit 1
+	fi
+	if [[ ! -f "$ANDROID_IMAGE" && ${#PRESENT_ANDROID_USER_STATE[@]} -gt 0 ]]; then
+		printf 'error: Android user data exists without its matching persistent image.\n' >&2
+		printf 'Restore the Android image before retrying this reset.\n' >&2
+		exit 1
+	fi
 	cat <<'EOF'
 This removes installed SteamOS host integration while preserving:
 EOF
@@ -194,10 +319,40 @@ fi
 
 sudo -v
 
+stage_complete preflight
+
+stage_start stop-waydroid
 printf 'Stopping Waydroid and detaching its private image...\n'
-sudo systemctl stop waydroid-container.service 2>/dev/null || true
-if findmnt --mountpoint /var/lib/waydroid >/dev/null 2>&1; then
-	sudo umount /var/lib/waydroid
+if ! unit_load_state="$(
+	systemctl show -p LoadState --value waydroid-container.service 2>/dev/null
+)"; then
+	printf 'error: could not determine the state of waydroid-container.service\n' >&2
+	exit 1
+fi
+if [[ -n "$unit_load_state" && "$unit_load_state" != not-found ]]; then
+	if ! sudo systemctl stop waydroid-container.service; then
+		printf 'error: failed to stop waydroid-container.service\n' >&2
+		exit 1
+	fi
+	if systemctl is-active --quiet waydroid-container.service; then
+		printf 'error: waydroid-container.service is still active\n' >&2
+		exit 1
+	fi
+fi
+
+remaining_waydroid_processes="$(
+	pgrep -ax waydroid 2>/dev/null || true
+	pgrep -ax waydroid-container 2>/dev/null || true
+	pgrep -af '(^|/)(waydroid|waydroid-container)([[:space:]]|$)' 2>/dev/null || true
+)"
+if [[ -n "$remaining_waydroid_processes" ]]; then
+	printf 'error: Waydroid processes remain after service shutdown:\n%s\n' \
+		"$remaining_waydroid_processes" >&2
+	exit 1
+fi
+
+if findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'; then
+	sudo umount -R /var/lib/waydroid
 fi
 if [[ -f "$ANDROID_IMAGE" ]]; then
 	while IFS=: read -r loop_device _; do
@@ -224,15 +379,21 @@ if [[ "$KEEP_ANDROID_STATE" == true && ${#ANDROID_STATE_FILES[@]} -gt 0 ]]; then
 			exit 1
 		fi
 	done
+	stage_complete stop-waydroid
+
+	stage_start preserve-image
 	printf 'Moving Android image state aside during host cleanup...\n'
-	PRESERVATION_ROOT="$HOME/.local/state/steamos-waydroid-preserved-reset"
+	PRESERVATION_ROOT="$PRESERVATION_CANDIDATE"
 	mkdir -p -- "$(dirname -- "$PRESERVATION_ROOT")"
 	mkdir -m 0700 -- "$PRESERVATION_ROOT"
 	for android_state_file in "${ANDROID_STATE_FILES[@]}"; do
 		preserved_file="$PRESERVATION_ROOT/$(basename -- "$android_state_file")"
-		sudo mv -- "$android_state_file" "$preserved_file"
+		move_android_state "$android_state_file" "$preserved_file"
 		PRESERVED_ANDROID_FILES+=("$preserved_file")
 	done
+	stage_complete preserve-image
+else
+	stage_complete stop-waydroid
 fi
 
 if pgrep -x steam >/dev/null; then
@@ -266,8 +427,15 @@ sudo firewall-cmd --runtime-to-permanent >/dev/null 2>&1 || true
 sudo systemctl stop firewalld.service 2>/dev/null || true
 
 printf 'Unlocking SteamOS for package and system-file cleanup...\n'
+stage_start readonly-disable
 sudo steamos-readonly disable
 READONLY_DISABLED=true
+usr_mount_options="$(findmnt -rn -T /usr -o OPTIONS)"
+if [[ ",$usr_mount_options," != *,rw,* ]] || ! sudo test -w /usr; then
+	printf 'error: SteamOS /usr is not writable after steamos-readonly disable\n' >&2
+	exit 1
+fi
+stage_complete readonly-disable
 
 # Remove both the current prebuilt Binder package and the legacy DKMS package.
 # The kernel module itself is named binder_linux. Older SteamOS targets with
@@ -284,32 +452,44 @@ done
 # module before removing its package. Do not touch the in-tree "binder" driver
 # used by SteamOS kernels that provide Binder themselves.
 if [[ "$binder_package_installed" == true ]] && lsmod | awk '$1 == "binder_linux" {found=1} END {exit !found}'; then
-	printf 'Unloading the bundled Binder kernel module...
-'
+	stage_start binder-unload
+	printf 'Unloading the bundled Binder kernel module...\n'
 	if ! sudo modprobe -r binder_linux; then
-		printf 'error: binder_linux is still in use; Binder package removal stopped
-' >&2
+		printf 'error: binder_linux is still in use; Binder package removal stopped\n' >&2
 		exit 1
 	fi
+	if lsmod | awk '$1 == "binder_linux" {found=1} END {exit !found}'; then
+		printf 'error: binder_linux remains loaded after modprobe -r\n' >&2
+		exit 1
+	fi
+	stage_complete binder-unload
 fi
 
-packages=()
 for package in waydroid python-gbinder libgbinder libglibutil steamos-waydroid-binder binder_linux-dkms; do
 	if pacman -Qq "$package" >/dev/null 2>&1; then
-		packages+=("$package")
+		stage_start remove-package "package=$package"
+		# These are the installer-owned packages, listed in dependency-safe order.
+		# Do not use -s: a targeted reset must not remove unrelated dependencies
+		# merely because pacman now considers them unneeded.
+		if ! sudo pacman -R --noconfirm "$package"; then
+			printf 'error: package removal failed: %s\n' "$package" >&2
+			exit 1
+		fi
+		if pacman -Qq "$package" >/dev/null 2>&1; then
+			printf 'error: package remains installed after removal: %s\n' "$package" >&2
+			exit 1
+		fi
+		stage_complete remove-package "package=$package"
 	fi
 done
-
-if ((${#packages[@]} > 0)); then
-	sudo pacman -Rns --noconfirm "${packages[@]}"
-fi
 
 # Refresh the module dependency/index files after removing an out-of-tree
 # Binder package so modprobe cannot resolve a stale binder_linux entry.
 if [[ "$binder_package_installed" == true ]]; then
-	printf 'Refreshing kernel module indexes...
-'
+	stage_start refresh-module-index
+	printf 'Refreshing kernel module indexes...\n'
 	sudo depmod -a "$(uname -r)"
+	stage_complete refresh-module-index
 fi
 
 sudo rm -f -- \
@@ -328,7 +508,7 @@ if [[ "$KEEP_ANDROID_STATE" == true ]]; then
 else
 	printf 'Removing Android data and per-user integration...\n'
 fi
-sudo rm -f -- \
+rm -f -- \
 	"$HOME/Desktop/Waydroid-Toolbox" \
 	"$HOME/Desktop/Waydroid-Updater" \
 	"$HOME/.local/share/kio/servicemenus/open_as_root.desktop" \
@@ -356,7 +536,7 @@ fi
 
 applications="$HOME/.local/share/applications"
 if [[ -d "$applications" ]]; then
-	sudo find "$applications" -maxdepth 1 -type f -name 'waydroid*.desktop' -delete
+	find "$applications" -maxdepth 1 -type f -name 'waydroid*.desktop' -delete
 fi
 
 sudo steamos-readonly enable
@@ -376,19 +556,19 @@ if [[ "$KEEP_ANDROID_STATE" == true ]]; then
 
 	if [[ "$RESET_ARTIFACT_STATE" == true ]]; then
 		printf 'Removing target-built bundles and machine-local artifact state...\n'
-		sudo rm -rf -- \
+		rm -rf -- \
 			"$HOME/.local/opt/steamos-waydroid" \
 			"$HOME/.local/share/steamos-waydroid-installer" \
-			"$HOME/.local/state/steamos-waydroid"
-		sudo rm -f -- "$PROJECT_ROOT/.deck-config.env"
+			"$STATE_ROOT/reports"
+		rm -f -- "$PROJECT_ROOT/.deck-config.env"
 	fi
 fi
 
-trap - EXIT
+trap - EXIT HUP INT TERM
 
 if [[ "$FULL_PROCESS_RESET" == true ]]; then
 	printf 'Removing Deck-side bootstrap prerequisites...\n'
-	sudo rm -rf -- \
+	rm -rf -- \
 		"$HOME/.local/opt/steamos-waydroid" \
 		"$HOME/.local/share/steamos-waydroid-installer"
 	case "$PROJECT_ROOT" in
@@ -440,3 +620,5 @@ elif [[ "$KEEP_ANDROID_STATE" == true ]]; then
 else
 	printf 'Android data was deleted. The Git checkout and verified target-built bundles were retained.\n'
 fi
+
+reset_log "stage=reset complete"

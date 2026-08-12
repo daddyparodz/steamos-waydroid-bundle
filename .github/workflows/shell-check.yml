@@ -63,4 +63,6 @@ jobs:
           shfmt -d .
 
       - name: Run uninstall failure-path tests
-        run: tests/test-uninstall.sh
+        run: |
+          tests/test-uninstall.sh
+          tests/test-maintainer-config.sh

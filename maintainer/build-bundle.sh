@@ -22,6 +22,10 @@ done
 [[ ${BUNDLE_VERSION:-} =~ ^[A-Za-z0-9._-]+$ ]] ||
 	die "unsafe or missing BUNDLE_VERSION"
 
+printf 'Build inputs propagated into the SteamOS rootfs:\n'
+printf '  wlroots: %s (API %s)\n' "$WLROOTS_VERSION" "$WLROOTS_API_VERSION"
+printf '  Cage:    %s\n' "$CAGE_VERSION"
+
 required_system_headers=(
 	stdio.h
 	stdint.h

@@ -8,6 +8,8 @@ REPO_ROOT="$(cd -- "$BUILD_SCRIPT_DIR/.." && pwd)"
 BUILD_CONFIG_FILE="${BUILD_CONFIG_FILE:-$REPO_ROOT/.build-config.env}"
 CALLER_BUNDLE_VERSION="${BUNDLE_VERSION:-}"
 CALLER_REPORT_ROOT="${REPORT_ROOT:-}"
+CALLER_WLROOTS_VERSION="${WLROOTS_VERSION:-}"
+CALLER_CAGE_VERSION="${CAGE_VERSION:-}"
 
 if [[ -f "$BUILD_CONFIG_FILE" ]]; then
 	# This file is user-owned local configuration and is never run as root on
@@ -20,12 +22,12 @@ BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-$HOME/steamos-waydroid-build/public}"
 BUNDLE_VERSION="${CALLER_BUNDLE_VERSION:-${BUNDLE_VERSION:-auto}}"
 BUNDLE_REVISION="${BUNDLE_REVISION:-r2}"
 # WLROOTS version maybe updated in newer versions of steamos
-WLROOTS_VERSION="${WLROOTS_VERSION:-0.18.2}"
+WLROOTS_VERSION="${CALLER_WLROOTS_VERSION:-${WLROOTS_VERSION:-0.18.2}}"
 # Consumed by build-bundle.sh after this shared library is sourced.
 # shellcheck disable=SC2034
 WLROOTS_API_VERSION="${WLROOTS_VERSION%.*}"
 # if WLROOTS changes, cage will also need updating
-CAGE_VERSION="${CAGE_VERSION:-v0.2.0}"
+CAGE_VERSION="${CALLER_CAGE_VERSION:-${CAGE_VERSION:-v0.2.0}}"
 
 PUBLISH_ROOT="${PUBLISH_ROOT:-$BUILD_WORK_ROOT/publish}"
 TARGET_FINGERPRINT_FILE="${TARGET_FINGERPRINT_FILE:-$BUILD_WORK_ROOT/target-fingerprint.env}"

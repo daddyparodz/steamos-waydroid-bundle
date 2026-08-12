@@ -13,7 +13,13 @@ sha256sums=("${WAYDROID_PYTHON_GBINDER_SHA256:?WAYDROID_PYTHON_GBINDER_SHA256 is
 
 build() {
   cd "gbinder-python-$pkgver"
-  python setup.py build --cython
+
+  local build_options=()
+  if (( $(vercmp "$pkgver" 1.3.0) < 0 )); then
+    build_options+=(--cython)
+  fi
+
+  python setup.py build "${build_options[@]}"
 }
 
 package() {

@@ -299,8 +299,8 @@ restore_archived_android_state_after_failure() {
 		sudo mv -- "$ARCHIVED_ANDROID_LEGACY_USER_STATE" "$HOME/waydroid" || restore_failed=true
 	fi
 	if [ "$restore_failed" = true ]; then
-		echo Automatic restoration was incomplete
-		inspect the timestamped archives before retrying. >&2
+		printf '%s\n' \
+			'Automatic restoration was incomplete; inspect the timestamped archives before retrying.' >&2
 		return 1
 	fi
 

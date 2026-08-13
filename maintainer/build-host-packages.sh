@@ -151,10 +151,20 @@ if [[ "$binder_state" == "missing" ]]; then
 
 	[[ "$binder_pkgrel" =~ ^[1-9][0-9]*$ ]] ||
 		die "invalid binder_pkgrel in Binder source lock: $binder_pkgrel"
+	[[ "$binder_repository" =~ ^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(\.git)?$ ]] ||
+		die "Binder repository must be an HTTPS GitHub repository: $binder_repository"
+	[[ "$binder_commit" =~ ^[0-9a-fA-F]{40}$ ]] ||
+		die "invalid binder_commit in Binder source lock: $binder_commit"
+	[[ "$binder_sha256" =~ ^[0-9a-fA-F]{64}$ ]] ||
+		die "invalid binder_sha256 in Binder source lock"
 
 	if [[ -n "${binder_patch:-}" ]]; then
+		[[ "$binder_patch" =~ ^[A-Za-z0-9._+-]+$ ]] ||
+			die "unsafe Binder patch filename: $binder_patch"
 		[[ -n "${binder_patch_sha256:-}" ]] ||
 			die "Binder lock selects patch '$binder_patch' but has no binder_patch_sha256"
+		[[ "$binder_patch_sha256" =~ ^[0-9a-fA-F]{64}$ ]] ||
+			die "invalid binder_patch_sha256 in Binder source lock"
 		[[ -r "$PACKAGE_RECIPE_ROOT/steamos-waydroid-binder/$binder_patch" ]] ||
 			die "selected Binder patch is missing: $PACKAGE_RECIPE_ROOT/steamos-waydroid-binder/$binder_patch"
 	elif [[ -n "${binder_patch_sha256:-}" ]]; then

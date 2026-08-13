@@ -74,6 +74,10 @@ firewall-cmd | firewall-offline-cmd)
 	*--query-port=53/udp*) rule=port_53 ;;
 	*--query-port=67/udp*) rule=port_67 ;;
 	*--query-forward*) rule=forward ;;
+	*--add-interface=waydroid0*) rule=interface ;;
+	*--add-port=53/udp*) rule=port_53 ;;
+	*--add-port=67/udp*) rule=port_67 ;;
+	*--add-forward*) rule=forward ;;
 	*--remove-interface=waydroid0*) rule=interface ;;
 	*--remove-port=53/udp*) rule=port_53 ;;
 	*--remove-port=67/udp*) rule=port_67 ;;
@@ -86,6 +90,16 @@ firewall-cmd | firewall-offline-cmd)
 	if [[ "$*" == *--query-* ]]; then
 		/usr/bin/grep -Fxq -- "$rule" "$rule_state"
 		exit $?
+	fi
+	if [[ "$*" == *--add-* ]]; then
+		if [[ "$SCENARIO" == firewall_active_runtime_add_failure &&
+			"$rule_state" == "$MOCK_STATE/runtime_rules" && "$rule" == port_53 ]]; then
+			exit 1
+		fi
+		if ! /usr/bin/grep -Fxq -- "$rule" "$rule_state"; then
+			printf '%s\n' "$rule" >>"$rule_state"
+		fi
+		exit 0
 	fi
 	/usr/bin/grep -Fxv -- "$rule" "$rule_state" >"$rule_state.new" || true
 	/bin/mv "$rule_state.new" "$rule_state"

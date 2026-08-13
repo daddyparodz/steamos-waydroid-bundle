@@ -437,9 +437,8 @@ fi
 
 if load_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
 	for firewall_rule in "${FIREWALL_RULE_KEYS[@]}"; do
-		firewall_rule_is_owned "$firewall_rule" || continue
-
-		if [[ "$firewall_mode" == active ]]; then
+		if [[ "$firewall_mode" == active ]] &&
+			firewall_rule_is_owned runtime "$firewall_rule"; then
 			if firewall_rule_command query "$firewall_rule" \
 				"${firewall_command[@]}" >/dev/null 2>&1; then
 				firewall_rule_command remove "$firewall_rule" \
@@ -452,6 +451,10 @@ if load_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
 					exit 1
 				fi
 			fi
+		fi
+
+		firewall_rule_is_owned permanent "$firewall_rule" || continue
+		if [[ "$firewall_mode" == active ]]; then
 			permanent_command=(sudo firewall-cmd --permanent)
 		else
 			permanent_command=("${firewall_command[@]}")

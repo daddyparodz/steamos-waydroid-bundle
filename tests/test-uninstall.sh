@@ -103,11 +103,15 @@ configure_firewall_case() {
 
 	mkdir -p "$CASE_HOME/.local/share/steamos-waydroid-installer"
 	cat >"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" <<'EOF'
-version=1
-interface=true
-port_53=true
-port_67=true
-forward=true
+version=2
+permanent_interface=true
+permanent_port_53=true
+permanent_port_67=true
+permanent_forward=true
+runtime_interface=true
+runtime_port_53=true
+runtime_port_67=true
+runtime_forward=true
 EOF
 	if [[ "$rules_present" == true ]]; then
 		printf '%s\n' interface port_53 port_67 forward >"$MOCK_STATE/runtime_rules"
@@ -267,7 +271,7 @@ test_firewall_absent_rules_are_idempotent() {
 test_firewall_unowned_forward_is_preserved() {
 	setup_case firewall-unowned-forward
 	configure_firewall_case true
-	sed -i 's/^forward=true$/forward=false/' \
+	sed -i 's/^permanent_forward=true$/permanent_forward=false/; s/^runtime_forward=true$/runtime_forward=false/' \
 		"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env"
 	run_uninstall firewall_active
 	[[ $RUN_STATUS -eq 0 ]] || return 1
@@ -278,6 +282,101 @@ test_firewall_unowned_forward_is_preserved() {
 		return 1
 	fi
 	assert_unrelated_firewall_unchanged || return 1
+}
+
+test_firewall_preexisting_runtime_rule_is_preserved() {
+	setup_case firewall-preexisting-runtime
+	configure_firewall_case false
+	printf '%s\n' forward >"$MOCK_STATE/runtime_rules"
+	printf '%s\n' forward >"$MOCK_STATE/permanent_rules"
+	sed -i 's/^runtime_forward=true$/runtime_forward=false/' \
+		"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env"
+	run_uninstall firewall_active
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	[[ "$(cat "$MOCK_STATE/runtime_rules")" == forward ]] || return 1
+	[[ ! -s "$MOCK_STATE/permanent_rules" ]] || return 1
+	if grep -Eq '^firewall-cmd --zone=trusted --remove-forward$' "$MOCK_LOG"; then
+		printf 'not ok - pre-existing runtime rule was removed\n' >&2
+		return 1
+	fi
+}
+
+test_firewall_failed_install_rolls_back_new_rules() {
+	setup_case firewall-install-rollback
+	printf '%s\n' forward >"$MOCK_STATE/runtime_rules"
+	printf '%s\n' forward >"$MOCK_STATE/permanent_rules"
+
+	set +e
+	(
+		export PATH="$MOCK_BIN:/usr/bin:/bin"
+		export MOCK_LOG MOCK_STATE MOCK_FIREWALL_ROOT
+		export SCENARIO=firewall_active_runtime_add_failure
+		source "$REPO_ROOT/libexec/steamos-waydroid/firewall-rules.sh"
+		firewall_test_privileged() {
+			"$@"
+		}
+		configure_firewall_rules \
+			"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" \
+			true "$CASE_ROOT/firewall-install.log" firewall_test_privileged
+	)
+	transaction_status=$?
+	set -e
+
+	[[ $transaction_status -ne 0 ]] || return 1
+	[[ "$(cat "$MOCK_STATE/runtime_rules")" == forward ]] || return 1
+	[[ "$(cat "$MOCK_STATE/permanent_rules")" == forward ]] || return 1
+	assert_no_file \
+		"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" || return 1
+	assert_log '^firewall-cmd --zone=trusted --remove-interface=waydroid0$' "$MOCK_LOG" || return 1
+	assert_log '^firewall-cmd --permanent --zone=trusted --remove-port=53/udp$' "$MOCK_LOG" || return 1
+}
+
+test_firewall_install_records_scoped_ownership() {
+	setup_case firewall-install-ownership
+	printf '%s\n' forward >"$MOCK_STATE/runtime_rules"
+	printf '%s\n' forward >"$MOCK_STATE/permanent_rules"
+
+	(
+		export PATH="$MOCK_BIN:/usr/bin:/bin"
+		export MOCK_LOG MOCK_STATE MOCK_FIREWALL_ROOT
+		export SCENARIO=firewall_active
+		source "$REPO_ROOT/libexec/steamos-waydroid/firewall-rules.sh"
+		firewall_test_privileged() {
+			"$@"
+		}
+		configure_firewall_rules \
+			"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" \
+			true "$CASE_ROOT/firewall-install.log" firewall_test_privileged
+	) || return 1
+
+	ownership_file="$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env"
+	assert_log '^version=2$' "$ownership_file" || return 1
+	assert_log '^permanent_interface=true$' "$ownership_file" || return 1
+	assert_log '^runtime_interface=true$' "$ownership_file" || return 1
+	assert_log '^permanent_forward=false$' "$ownership_file" || return 1
+	assert_log '^runtime_forward=false$' "$ownership_file" || return 1
+	[[ "$(sort "$MOCK_STATE/runtime_rules")" == $'forward\ninterface\nport_53\nport_67' ]] || return 1
+	[[ "$(sort "$MOCK_STATE/permanent_rules")" == $'forward\ninterface\nport_53\nport_67' ]] || return 1
+}
+
+test_firewall_v1_ownership_is_permanent_only() {
+	setup_case firewall-v1
+	configure_firewall_case true
+	cat >"$CASE_HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env" <<'EOF'
+version=1
+interface=true
+port_53=true
+port_67=true
+forward=true
+EOF
+	run_uninstall firewall_active
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	[[ "$(cat "$MOCK_STATE/runtime_rules")" == $'interface\nport_53\nport_67\nforward' ]] || return 1
+	[[ ! -s "$MOCK_STATE/permanent_rules" ]] || return 1
+	if grep -Eq '^firewall-cmd --zone=trusted --remove-' "$MOCK_LOG"; then
+		printf 'not ok - legacy ownership removed a runtime rule\n' >&2
+		return 1
+	fi
 }
 
 test_firewall_invalid_configuration_fails_closed() {
@@ -333,6 +432,10 @@ tests=(
 	test_firewall_inactive_offline_cleanup
 	test_firewall_absent_rules_are_idempotent
 	test_firewall_unowned_forward_is_preserved
+	test_firewall_preexisting_runtime_rule_is_preserved
+	test_firewall_v1_ownership_is_permanent_only
+	test_firewall_failed_install_rolls_back_new_rules
+	test_firewall_install_records_scoped_ownership
 	test_firewall_invalid_configuration_fails_closed
 	test_firewall_cleanup_second_reset_is_safe
 	test_no_runtime_to_permanent_in_project_firewall_paths

@@ -156,11 +156,12 @@ restores the staged image before retrying. If both active and staged copies
 exist, it stops without overwriting either copy.
 
 Firewalld cleanup validates the permanent configuration and removes only rules
-recorded as having been introduced by this installer. It uses targeted runtime
-and permanent operations when firewalld is active, or `firewall-offline-cmd`
-when it is inactive, and preserves the service's initial state. Installations
-created before ownership tracking leave their existing trusted-zone rules
-unchanged during reset rather than risk removing pre-existing user settings.
+recorded as having been introduced by this installer. Runtime and permanent
+ownership are recorded separately; failed setup rolls back only rules added by
+that setup attempt. Cleanup uses targeted runtime and permanent operations when
+firewalld is active, or `firewall-offline-cmd` when it is inactive, and preserves
+the service's initial state. Legacy ownership records are treated as
+permanent-only so they cannot authorize removal of a pre-existing runtime rule.
 
 After any successful uninstall or reset, fully restart SteamOS before launching
 Waydroid, reinstalling, repairing, or running another reset. Reset deliberately

@@ -187,8 +187,7 @@ elif [ "$REINSTALL_ANDROID_MODE" = true ]; then
 	if [ "$ANDROID_REINSTALL_HAS_EXISTING" = true ]; then
 		echo Mode: reinstall Android while retaining recoverable copies of the previous image and user data
 	else
-		echo Mode: install Android
-		no previous persistent image was found
+		printf 'Mode: install Android; no previous persistent image was found.\n'
 	fi
 fi
 
@@ -515,9 +514,9 @@ else
 	echo Error installing waydroid. Run the script again to install waydroid.
 	abort_run
 fi
-# Configure only the four trusted-zone settings used by Waydroid. Record which
-# permanent settings this installer introduced so uninstall never removes a
-# pre-existing user rule.
+# Configure only the four trusted-zone settings used by Waydroid. Runtime and
+# permanent ownership are tracked independently, and a failed transaction
+# removes only settings which this run added.
 firewalld_was_active=false
 if systemctl is-active --quiet firewalld.service; then
 	firewalld_was_active=true
@@ -525,70 +524,11 @@ fi
 firewall_sudo() {
 	printf '%s\n' "$current_password" | sudo -S "$@"
 }
-if [ "$firewalld_was_active" = true ]; then
-	if ! firewall_sudo firewall-cmd --check-config >>"$LOGFILE" 2>&1; then
-		echo 'Permanent firewalld configuration is invalid; refusing to modify it.' >&2
-		abort_run
-	fi
-else
-	if ! firewall_sudo firewall-offline-cmd --check-config >>"$LOGFILE" 2>&1; then
-		echo 'Permanent firewalld configuration is invalid; refusing to modify it.' >&2
-		abort_run
-	fi
-fi
-if load_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
-	:
-else
-	ownership_status=$?
-	if [ "$ownership_status" -eq 2 ]; then
-		echo Invalid firewall ownership record: "$FIREWALL_OWNERSHIP_FILE" >&2
-		abort_run
-	fi
-fi
-if ! firewall_sudo systemctl start firewalld; then
-	echo Could not start firewalld to configure Waydroid networking. >&2
-	abort_run
-fi
-firewall_setup_failed=false
-for firewall_rule in "${FIREWALL_RULE_KEYS[@]}"; do
-	if firewall_rule_command query "$firewall_rule" \
-		firewall_sudo firewall-cmd --permanent >/dev/null 2>&1; then
-		:
-	else
-		firewall_query_status=$?
-		if [ "$firewall_query_status" -ne 1 ] ||
-			! firewall_rule_command add "$firewall_rule" \
-				firewall_sudo firewall-cmd --permanent >>"$LOGFILE" 2>&1; then
-			firewall_setup_failed=true
-			break
-		fi
-		firewall_mark_rule_owned "$firewall_rule"
-	fi
-	if firewall_rule_command query "$firewall_rule" \
-		firewall_sudo firewall-cmd >/dev/null 2>&1; then
-		:
-	else
-		firewall_query_status=$?
-		if [ "$firewall_query_status" -ne 1 ] ||
-			! firewall_rule_command add "$firewall_rule" \
-				firewall_sudo firewall-cmd >>"$LOGFILE" 2>&1; then
-			firewall_setup_failed=true
-			break
-		fi
-	fi
-done
-if [ "$firewall_setup_failed" != true ] &&
-	! firewall_sudo firewall-cmd --check-config >>"$LOGFILE" 2>&1; then
-	firewall_setup_failed=true
-fi
-if [ "$firewall_setup_failed" != true ] &&
-	! write_firewall_ownership "$FIREWALL_OWNERSHIP_FILE"; then
-	firewall_setup_failed=true
-fi
-if [ "$firewalld_was_active" != true ]; then
-	firewall_sudo systemctl stop firewalld || firewall_setup_failed=true
-fi
-if [ "$firewall_setup_failed" = true ]; then
+if ! configure_firewall_rules \
+	"$FIREWALL_OWNERSHIP_FILE" \
+	"$firewalld_was_active" \
+	"$LOGFILE" \
+	firewall_sudo; then
 	echo Failed to configure only the required Waydroid firewall settings. >&2
 	abort_run
 fi

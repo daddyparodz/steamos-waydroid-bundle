@@ -14,42 +14,42 @@ require_command sudo
 require_command sha256sum
 
 DECK_HOST="${DECK_HOST:-}"
-[[ -n "$DECK_HOST" ]] || \
-    die "set DECK_HOST in $BUILD_CONFIG_FILE (see maintainer/config.example.env)"
+[[ -n "$DECK_HOST" ]] ||
+	die "set DECK_HOST in $BUILD_CONFIG_FILE (see maintainer/config.example.env)"
 
 mkdir -p "$BUILD_WORK_ROOT"
 
 printf 'Checking SSH access to %s...\n' "$DECK_HOST"
 ssh "$DECK_HOST" 'test "$(id -un)" = deck'
 
-[[ "$BUNDLE_REVISION" =~ ^[A-Za-z0-9._-]+$ ]] || \
-    die "unsafe BUNDLE_REVISION: $BUNDLE_REVISION"
+[[ "$BUNDLE_REVISION" =~ ^[A-Za-z0-9._-]+$ ]] ||
+	die "unsafe BUNDLE_REVISION: $BUNDLE_REVISION"
 printf 'Capturing the target SteamOS and userspace ABI fingerprint...\n'
 fingerprint_capture="$(mktemp "$BUILD_WORK_ROOT/.target-fingerprint.XXXXXX")"
 trap 'rm -f -- "$fingerprint_capture"' EXIT
 ssh "$DECK_HOST" \
-    "FINGERPRINT_RUN_MAIN=1 WLROOTS_VERSION='$WLROOTS_VERSION' BUNDLE_REVISION='$BUNDLE_REVISION' bash -s -- collect" \
-    < "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh" \
-    > "$fingerprint_capture"
+	"FINGERPRINT_RUN_MAIN=1 WLROOTS_VERSION='$WLROOTS_VERSION' BUNDLE_REVISION='$BUNDLE_REVISION' bash -s -- collect" \
+	<"$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh" \
+	>"$fingerprint_capture"
 suggested_bundle_version="$(awk -F= \
-    '$1 == "SUGGESTED_BUNDLE_VERSION" {print $2; exit}' \
-    "$fingerprint_capture")"
+	'$1 == "SUGGESTED_BUNDLE_VERSION" {print $2; exit}' \
+	"$fingerprint_capture")"
 if [[ -z "$suggested_bundle_version" ]]; then
-    printf 'Captured fingerprint output follows:\n' >&2
-    if [[ -s "$fingerprint_capture" ]]; then
-        sed -n '1,80p' "$fingerprint_capture" >&2
-    else
-        printf '  (no output was returned by the Deck)\n' >&2
-    fi
-    die "captured target fingerprint is incomplete (missing SUGGESTED_BUNDLE_VERSION)"
+	printf 'Captured fingerprint output follows:\n' >&2
+	if [[ -s "$fingerprint_capture" ]]; then
+		sed -n '1,80p' "$fingerprint_capture" >&2
+	else
+		printf '  (no output was returned by the Deck)\n' >&2
+	fi
+	die "captured target fingerprint is incomplete (missing SUGGESTED_BUNDLE_VERSION)"
 fi
 install -m 0644 "$fingerprint_capture" "$TARGET_FINGERPRINT_FILE"
 rm -f -- "$fingerprint_capture"
 trap - EXIT
 printf 'Target bundle version: %s\n' "$suggested_bundle_version"
 target_environment_id="$(awk -F= \
-    '$1 == "TARGET_ENVIRONMENT_ID" {print $2; exit}' \
-    "$TARGET_FINGERPRINT_FILE")"
+	'$1 == "TARGET_ENVIRONMENT_ID" {print $2; exit}' \
+	"$TARGET_FINGERPRINT_FILE")"
 [[ -n "$target_environment_id" ]] || die "captured target environment ID is missing"
 
 TARGET_WORK_ROOT="$TARGETS_ROOT/$target_environment_id"
@@ -57,73 +57,73 @@ SNAPSHOT_ROOT="$TARGET_WORK_ROOT/snapshot"
 ROOTFS_ROOT="$TARGET_WORK_ROOT/rootfs"
 TARGET_VERSION_FINGERPRINT="$TARGET_WORK_ROOT/target-fingerprint.env"
 mkdir -p \
-    "$SNAPSHOT_ROOT/usr" \
-    "$SNAPSHOT_ROOT/etc" \
-    "$ROOTFS_ROOT"
+	"$SNAPSHOT_ROOT/usr" \
+	"$SNAPSHOT_ROOT/etc" \
+	"$ROOTFS_ROOT"
 install -m 0644 "$TARGET_FINGERPRINT_FILE" "$TARGET_VERSION_FINGERPRINT"
 
 printf 'Detecting the SteamOS pacman database path...\n'
 PACMAN_DB_PATH="$(ssh "$DECK_HOST" 'pacman-conf DBPath' | head -n 1)"
 PACMAN_DB_PATH="${PACMAN_DB_PATH%/}"
 case "$PACMAN_DB_PATH" in
-    /var/*|/usr/*) ;;
-    *) die "Deck returned an unsafe or unsupported pacman DBPath: $PACMAN_DB_PATH" ;;
+/var/* | /usr/*) ;;
+*) die "Deck returned an unsafe or unsupported pacman DBPath: $PACMAN_DB_PATH" ;;
 esac
 if [[ "$PACMAN_DB_PATH" == *'/../'* || "$PACMAN_DB_PATH" == */.. ]]; then
-    die "Deck returned an unsafe pacman DBPath: $PACMAN_DB_PATH"
+	die "Deck returned an unsafe pacman DBPath: $PACMAN_DB_PATH"
 fi
 mkdir -p "$SNAPSHOT_ROOT$PACMAN_DB_PATH"
 printf 'Pacman database: %s\n' "$PACMAN_DB_PATH"
 
 printf 'Copying /usr from the Deck (read-only source)...\n'
 rsync -aH --info=progress2 \
-    --exclude='/bin/cupsd' \
-    --exclude='/bin/groupmems' \
-    --exclude='/bin/mount.nfs' \
-    --exclude='/lib/dbus-daemon-launch-helper' \
-    --exclude='/lib/cups/backend/cups-pdf' \
-    --exclude='/lib/ssh/ssh-keysign' \
-    --exclude='/share/ModemManager/' \
-    --exclude='/share/factory/' \
-    "$DECK_HOST:/usr/" \
-    "$SNAPSHOT_ROOT/usr/"
+	--exclude='/bin/cupsd' \
+	--exclude='/bin/groupmems' \
+	--exclude='/bin/mount.nfs' \
+	--exclude='/lib/dbus-daemon-launch-helper' \
+	--exclude='/lib/cups/backend/cups-pdf' \
+	--exclude='/lib/ssh/ssh-keysign' \
+	--exclude='/share/ModemManager/' \
+	--exclude='/share/factory/' \
+	"$DECK_HOST:/usr/" \
+	"$SNAPSHOT_ROOT/usr/"
 
 printf 'Copying the pacman database from the Deck...\n'
 rsync -aH --info=progress2 \
-    "$DECK_HOST:$PACMAN_DB_PATH/" \
-    "$SNAPSHOT_ROOT$PACMAN_DB_PATH/"
+	"$DECK_HOST:$PACMAN_DB_PATH/" \
+	"$SNAPSHOT_ROOT$PACMAN_DB_PATH/"
 
 printf 'Copying only build-relevant system configuration from the Deck...\n'
 rsync -aH --info=progress2 \
-    --exclude='/pacman.d/gnupg/' \
-    --include='/os-release' \
-    --include='/arch-release' \
-    --include='/passwd' \
-    --include='/group' \
-    --include='/nsswitch.conf' \
-    --include='/hosts' \
-    --include='/hostname' \
-    --include='/resolv.conf' \
-    --include='/localtime' \
-    --include='/mtab' \
-    --include='/pacman.conf' \
-    --include='/pacman.d/***' \
-    --include='/makepkg.conf' \
-    --include='/makepkg.conf.d/***' \
-    --include='/ld.so.conf' \
-    --include='/ld.so.conf.d/***' \
-    --include='/ssl/' \
-    --include='/ssl/cert.pem' \
-    --include='/ssl/certs/' \
-    --include='/ssl/certs/ca-bundle.crt' \
-    --include='/ssl/certs/ca-certificates.crt' \
-    --include='/ssl/certs/java/' \
-    --include='/ssl/certs/java/README' \
-    --include='/ca-certificates/' \
-    --include='/ca-certificates/***' \
-    --exclude='*' \
-    "$DECK_HOST:/etc/" \
-    "$SNAPSHOT_ROOT/etc/"
+	--exclude='/pacman.d/gnupg/' \
+	--include='/os-release' \
+	--include='/arch-release' \
+	--include='/passwd' \
+	--include='/group' \
+	--include='/nsswitch.conf' \
+	--include='/hosts' \
+	--include='/hostname' \
+	--include='/resolv.conf' \
+	--include='/localtime' \
+	--include='/mtab' \
+	--include='/pacman.conf' \
+	--include='/pacman.d/***' \
+	--include='/makepkg.conf' \
+	--include='/makepkg.conf.d/***' \
+	--include='/ld.so.conf' \
+	--include='/ld.so.conf.d/***' \
+	--include='/ssl/' \
+	--include='/ssl/cert.pem' \
+	--include='/ssl/certs/' \
+	--include='/ssl/certs/ca-bundle.crt' \
+	--include='/ssl/certs/ca-certificates.crt' \
+	--include='/ssl/certs/java/' \
+	--include='/ssl/certs/java/README' \
+	--include='/ca-certificates/' \
+	--include='/ca-certificates/***' \
+	--exclude='*' \
+	"$DECK_HOST:/etc/" \
+	"$SNAPSHOT_ROOT/etc/"
 
 printf 'Materialising the rootfs with root ownership on Fedora...\n'
 # An interrupted refresh must not leave an older safety marker on a partially
@@ -131,18 +131,18 @@ printf 'Materialising the rootfs with root ownership on Fedora...\n'
 sudo rm -f -- "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root"
 sudo rsync -aH "$SNAPSHOT_ROOT/" "$ROOTFS_ROOT/"
 sudo chown -R root:root "$ROOTFS_ROOT"
-printf '%s\n' 'STEAMOS_WAYDROID_COPIED_BUILD_ROOT=1' | \
-    sudo tee "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" > /dev/null
+printf '%s\n' 'STEAMOS_WAYDROID_COPIED_BUILD_ROOT=1' |
+	sudo tee "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root" >/dev/null
 sudo chmod 0644 "$ROOTFS_ROOT/.steamos-waydroid-copied-build-root"
 
 sudo install -d -m 0755 \
-    "$ROOTFS_ROOT/dev" \
-    "$ROOTFS_ROOT/proc" \
-    "$ROOTFS_ROOT/sys" \
-    "$ROOTFS_ROOT/run" \
-    "$ROOTFS_ROOT/home" \
-    "$ROOTFS_ROOT/root" \
-    "$ROOTFS_ROOT/opt"
+	"$ROOTFS_ROOT/dev" \
+	"$ROOTFS_ROOT/proc" \
+	"$ROOTFS_ROOT/sys" \
+	"$ROOTFS_ROOT/run" \
+	"$ROOTFS_ROOT/home" \
+	"$ROOTFS_ROOT/root" \
+	"$ROOTFS_ROOT/opt"
 sudo install -d -m 1777 "$ROOTFS_ROOT/tmp"
 
 sudo ln -sfn usr/bin "$ROOTFS_ROOT/bin"

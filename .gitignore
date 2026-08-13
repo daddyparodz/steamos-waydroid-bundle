@@ -1,5 +1,5 @@
-.build-config.env
-.deck-config.env
+.build-config.env*
+.deck-config.env*
 fingerprint.txt
 SteamOS-Waydroid-Proposed-Architecture.md
 logfile

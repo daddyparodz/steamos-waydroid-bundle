@@ -1,0 +1,58 @@
+pkgname=steamos-waydroid-binder
+pkgver=1
+pkgrel="${STEAMOS_BINDER_PKGREL:?STEAMOS_BINDER_PKGREL is required}"
+pkgdesc='Android Binder kernel module for the SteamOS Waydroid bundle'
+arch=('x86_64')
+url="${STEAMOS_BINDER_REPOSITORY:?STEAMOS_BINDER_REPOSITORY is required}"
+license=('GPL-2.0-only')
+options=('!strip' '!debug')
+
+: "${STEAMOS_BINDER_COMMIT:?STEAMOS_BINDER_COMMIT is required}"
+: "${STEAMOS_KERNEL_RELEASE:?STEAMOS_KERNEL_RELEASE is required}"
+
+repository_archive_base="${STEAMOS_BINDER_REPOSITORY%.git}"
+source=(
+	"anbox-modules-${STEAMOS_BINDER_COMMIT}.tar.gz::${repository_archive_base}/archive/${STEAMOS_BINDER_COMMIT}.tar.gz"
+)
+
+sha256sums=(
+	"${STEAMOS_BINDER_SHA256:?STEAMOS_BINDER_SHA256 is required}"
+)
+
+if [[ -n ${STEAMOS_BINDER_PATCH:-} ]]; then
+	source+=("$STEAMOS_BINDER_PATCH")
+	sha256sums+=(
+		"${STEAMOS_BINDER_PATCH_SHA256:?STEAMOS_BINDER_PATCH_SHA256 is required when a patch is selected}"
+	)
+fi
+
+prepare() {
+	local source_dir="$srcdir/anbox-modules-${STEAMOS_BINDER_COMMIT}"
+
+	if [[ -n ${STEAMOS_BINDER_PATCH:-} ]]; then
+		patch -d "$source_dir" -Np1 -i "$srcdir/$STEAMOS_BINDER_PATCH"
+	fi
+}
+
+build() {
+	local kernel_build="/usr/lib/modules/${STEAMOS_KERNEL_RELEASE}/build"
+	local binder_dir="$srcdir/anbox-modules-${STEAMOS_BINDER_COMMIT}/binder"
+
+	[[ -r "$kernel_build/Makefile" ]] || {
+		printf 'Missing target kernel build tree: %s\n' "$kernel_build" >&2
+		return 1
+	}
+
+	make \
+		-C "$binder_dir" \
+		KERNEL_SRC="$kernel_build"
+}
+
+package() {
+	local binder_dir="$srcdir/anbox-modules-${STEAMOS_BINDER_COMMIT}/binder"
+	local module_dir="$pkgdir/usr/lib/modules/${STEAMOS_KERNEL_RELEASE}/updates/steamos-waydroid"
+
+	install -Dm644 \
+		"$binder_dir/binder_linux.ko" \
+		"$module_dir/binder_linux.ko"
+}

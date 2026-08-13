@@ -1,7 +1,225 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# first make sure /var/lib/waydroid is not mounted
-systemctl stop waydroid-container.service && umount /var/lib/waydroid && losetup -d $(losetup | grep waydroid.img | cut -d " " -f1)
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-# this will create custom mount for /var/lib/waydroid
-ROOTDEV=$(losetup --find --show /home/deck/Android_Waydroid/waydroid.img) && mount $ROOTDEV /var/lib/waydroid
+IMAGE=/home/deck/Android_Waydroid/waydroid.img
+WAYDROID_MOUNT=/var/lib/waydroid
+LOOP_DEVICE=""
+MOUNTED_BY_SCRIPT=false
+
+die() {
+	printf 'error: %s\n' "$*" >&2
+	exit 1
+}
+
+diagnose_binder() {
+	printf 'Binder diagnostics:\n' >&2
+	printf '  required devices:\n' >&2
+	ls -l /dev/anbox-binder /dev/anbox-vndbinder /dev/anbox-hwbinder >&2 2>/dev/null || true
+	printf '  binderfs mount:\n' >&2
+	findmnt /dev/binderfs >&2 2>/dev/null || true
+	printf '  binderfs contents:\n' >&2
+	ls -l /dev/binderfs >&2 2>/dev/null || true
+	printf '  binder filesystem support:\n' >&2
+	grep -w binder /proc/filesystems >&2 2>/dev/null || true
+	printf '  binder modules:\n' >&2
+	ls -d /sys/module/binder /sys/module/binder_linux >&2 2>/dev/null || true
+}
+
+binder_die() {
+	diagnose_binder
+	die "$*"
+}
+
+cleanup_failed_mount() {
+	if [[ "$MOUNTED_BY_SCRIPT" == true ]] &&
+		findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
+		umount "$WAYDROID_MOUNT" 2>/dev/null || true
+	fi
+	if [[ "$LOOP_DEVICE" == /dev/loop* ]]; then
+		losetup -d "$LOOP_DEVICE" 2>/dev/null || true
+	fi
+}
+
+required_binder_devices_exist() {
+	local binder_device
+
+	for binder_device in \
+		/dev/anbox-binder \
+		/dev/anbox-vndbinder \
+		/dev/anbox-hwbinder; do
+		[[ -c "$binder_device" ]] || return 1
+	done
+}
+
+load_binder_module() {
+	local binder_module binder_filename modules_builtin
+
+	# modprobe selects modules for the running atomic SteamOS release and
+	# rejects an unusable module itself. Accept either the in-tree or bundled
+	# module name without independently comparing kernel fingerprints.
+	for binder_module in binder_linux binder; do
+		if [[ -d "/sys/module/$binder_module" ]]; then
+			printf 'Binder support is active using %s.\n' "$binder_module"
+			return 0
+		fi
+		binder_filename="$(modinfo -F filename "$binder_module" 2>/dev/null || true)"
+		if [[ "$binder_filename" == "(builtin)" ]]; then
+			printf 'SteamOS provides built-in Binder support.\n'
+			return 0
+		fi
+		if [[ -n "$binder_filename" ]] && modprobe "$binder_module"; then
+			if [[ -d "/sys/module/$binder_module" ]]; then
+				printf 'Loaded Binder support using %s.\n' "$binder_module"
+				return 0
+			fi
+		fi
+	done
+
+	# Some built-in modules are recorded in modules.builtin even when modinfo
+	# does not expose them by name.
+	modules_builtin="/usr/lib/modules/$(uname -r)/modules.builtin"
+	if [[ -r "$modules_builtin" ]] &&
+		grep -Eq '(^|/)(binder|binder_linux)\.ko$' "$modules_builtin"; then
+		printf 'SteamOS provides built-in Binder support.\n'
+		return 0
+	fi
+
+	die "Binder support is missing; run the SteamOS Waydroid installer in Desktop Mode"
+}
+
+allocate_binderfs_device() {
+	local binder_device=$1
+
+	python3 - "$binder_device" <<'PY'
+import array
+import fcntl
+import struct
+import sys
+
+BINDERFS_MAX_NAME = 255
+IOC_NRBITS = 8
+IOC_TYPEBITS = 8
+IOC_SIZEBITS = 14
+IOC_WRITE = 1
+IOC_READ = 2
+IOC_NRSHIFT = 0
+IOC_TYPESHIFT = IOC_NRSHIFT + IOC_NRBITS
+IOC_SIZESHIFT = IOC_TYPESHIFT + IOC_TYPEBITS
+IOC_DIRSHIFT = IOC_SIZESHIFT + IOC_SIZEBITS
+BINDER_CTL_ADD = (
+    ((IOC_READ | IOC_WRITE) << IOC_DIRSHIFT)
+    | (ord("b") << IOC_TYPESHIFT)
+    | (1 << IOC_NRSHIFT)
+    | (struct.calcsize("256sII") << IOC_SIZESHIFT)
+)
+
+name = sys.argv[1].encode()
+if len(name) > BINDERFS_MAX_NAME:
+    raise SystemExit(f"Binder device name is too long: {sys.argv[1]}")
+
+request = array.array("B", struct.pack("256sII", name, 0, 0))
+with open("/dev/binderfs/binder-control", "rb", buffering=0) as control:
+    fcntl.ioctl(control.fileno(), BINDER_CTL_ADD, request, True)
+PY
+}
+
+provision_binder_devices() {
+	local binder_device
+
+	grep -qw binder /proc/filesystems ||
+		binder_die "Binder devices are missing and binderfs is not supported by this kernel"
+
+	mkdir -p /dev/binderfs
+	if ! findmnt --mountpoint /dev/binderfs >/dev/null 2>&1; then
+		mount -t binder binder /dev/binderfs ||
+			binder_die "could not mount binderfs at /dev/binderfs"
+	fi
+	[[ -c /dev/binderfs/binder-control ]] ||
+		binder_die "binderfs is mounted but /dev/binderfs/binder-control is missing"
+
+	for binder_device in anbox-binder anbox-vndbinder anbox-hwbinder; do
+		if [[ ! -c "/dev/binderfs/$binder_device" ]]; then
+			allocate_binderfs_device "$binder_device" ||
+				binder_die "could not allocate /dev/binderfs/$binder_device using binder-control"
+		fi
+		[[ -c "/dev/binderfs/$binder_device" ]] ||
+			binder_die "binder-control did not create /dev/binderfs/$binder_device"
+		ln -sfn "/dev/binderfs/$binder_device" "/dev/$binder_device" ||
+			binder_die "could not link /dev/$binder_device to /dev/binderfs/$binder_device"
+	done
+}
+
+validate_binder() {
+	load_binder_module
+
+	if ! required_binder_devices_exist; then
+		provision_binder_devices
+	fi
+
+	if ! required_binder_devices_exist; then
+		binder_die "Binder support is loaded, but the required Waydroid Binder devices are unavailable"
+	fi
+
+	printf 'Binder support is active and Waydroid Binder devices are ready.\n'
+}
+
+validate_image() {
+	local filesystem_type
+
+	[[ ! -L "$IMAGE" ]] || die "Android image must not be a symbolic link: $IMAGE"
+	[[ -f "$IMAGE" ]] || die "Android image is missing or is not a regular file: $IMAGE"
+	filesystem_type="$(blkid -p -s TYPE -o value -- "$IMAGE" 2>/dev/null || true)"
+	[[ "$filesystem_type" == ext4 ]] ||
+		die "Android image is not a recognisable ext4 filesystem: $IMAGE"
+}
+
+validate_mounted_image() {
+	local required_path
+
+	for required_path in \
+		waydroid_base.prop \
+		waydroid.cfg \
+		lxc/waydroid/config \
+		rootfs; do
+		[[ -e "$WAYDROID_MOUNT/$required_path" ]] ||
+			die "Android image is missing required state: $required_path"
+	done
+	[[ -s "$WAYDROID_MOUNT/waydroid_base.prop" ]] ||
+		die "Android image has an empty waydroid_base.prop"
+	[[ -s "$WAYDROID_MOUNT/waydroid.cfg" ]] ||
+		die "Android image has an empty waydroid.cfg"
+}
+
+validate_binder
+validate_image
+
+systemctl stop waydroid-container.service 2>/dev/null || true
+if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
+	umount "$WAYDROID_MOUNT" || die "could not unmount the previous Waydroid image"
+fi
+if findmnt -rn -o TARGET | grep -Eq "^${WAYDROID_MOUNT}(/|$)"; then
+	findmnt -R "$WAYDROID_MOUNT" >&2 || true
+	die "a stale mount remains below $WAYDROID_MOUNT"
+fi
+
+while IFS=: read -r attached_loop _; do
+	if [[ "$attached_loop" == /dev/loop* ]]; then
+		losetup -d "$attached_loop" ||
+			die "could not detach the previous Android image loop device: $attached_loop"
+	fi
+done < <(losetup -j "$IMAGE")
+
+mkdir -p "$WAYDROID_MOUNT"
+trap cleanup_failed_mount EXIT
+trap 'exit 130' HUP INT TERM
+LOOP_DEVICE="$(losetup --find --show "$IMAGE")" ||
+	die "could not attach the Android image to a loop device"
+[[ "$LOOP_DEVICE" == /dev/loop* ]] || die "losetup returned an invalid loop device"
+mount -t ext4 "$LOOP_DEVICE" "$WAYDROID_MOUNT" || die "could not mount the Android image"
+MOUNTED_BY_SCRIPT=true
+validate_mounted_image
+
+trap - EXIT HUP INT TERM
+printf 'Binder and Android image preflight passed.\n'

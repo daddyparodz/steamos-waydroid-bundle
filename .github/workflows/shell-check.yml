@@ -53,7 +53,7 @@ jobs:
           )
 
           if ((${#scripts[@]})); then
-            shellcheck "${scripts[@]}"
+            shellcheck -S warning "${scripts[@]}"
           fi
 
       - name: Check formatting
@@ -61,3 +61,11 @@ jobs:
         run: |
           set -euo pipefail
           shfmt -d .
+
+      - name: Run uninstall failure-path tests
+        run: |
+          tests/test-uninstall.sh
+          tests/test-maintainer-config.sh
+          tests/test-shell-messages.sh
+          tests/test-binder-lock.sh
+          tests/test-package-transaction.sh

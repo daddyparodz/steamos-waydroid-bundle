@@ -1,0 +1,25 @@
+# Binder source lock.
+#
+# Pins the exact out-of-tree Android Binder source used when the target
+# SteamOS kernel does not provide Binder itself.
+
+format=1
+
+binder_repository=https://github.com/choff/anbox-modules.git
+
+# Exact upstream commit to build.
+binder_commit=3f65f66a87b2323e56bd0d68993524d034d8b720
+
+# SHA-256 of:
+# https://github.com/choff/anbox-modules/archive/<binder_commit>.tar.gz
+binder_sha256=2701c1fbb5812a1a74481f71c60b733754a43a344e37440d82e0f2b782320599
+
+# Packaging revision for our Binder package.
+# Increment this if our packaging/patching changes while binder_commit stays
+# the same.
+binder_pkgrel=1
+
+# Optional local compatibility patch.
+# Leave both values empty when no patch is required.
+binder_patch=
+binder_patch_sha256=

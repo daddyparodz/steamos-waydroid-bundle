@@ -92,6 +92,69 @@ waydroid_mounts_are_active() {
 	findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'
 }
 
+verify_bundle_only_pacman_transaction() {
+	local package_file metadata_name planned_name
+	local transaction_output
+	local -a missing_targets=() unexpected_packages=()
+	local -A bundled_package_names=()
+	local -A planned_package_names=()
+
+	(($# > 0)) || {
+		printf 'No bundled packages were supplied for transaction validation.\n' >&2
+		return 1
+	}
+
+	for package_file in "$@"; do
+		[[ -f "$package_file" ]] || {
+			printf 'Bundled package is missing: %s\n' "$package_file" >&2
+			return 1
+		}
+		metadata_name="$(
+			bsdtar -xOf "$package_file" .PKGINFO |
+				awk -F' = ' '$1 == "pkgname" {print $2; exit}'
+		)"
+		[[ "$metadata_name" =~ ^[A-Za-z0-9@._+-]+$ ]] || {
+			printf 'Bundled package has an invalid package name: %s\n' "$package_file" >&2
+			return 1
+		}
+		bundled_package_names["$metadata_name"]=true
+	done
+
+	if ! transaction_output="$(
+		LC_ALL=C pacman -U --print --print-format '%n' "$@"
+	)"; then
+		printf 'Pacman could not resolve the bundled package transaction.\n' >&2
+		return 1
+	fi
+
+	while IFS= read -r planned_name; do
+		[[ -n "$planned_name" ]] || continue
+		planned_package_names["$planned_name"]=true
+		if [[ ${bundled_package_names[$planned_name]:-false} != true ]]; then
+			unexpected_packages+=("$planned_name")
+		fi
+	done <<<"$transaction_output"
+	for metadata_name in "${!bundled_package_names[@]}"; do
+		if [[ ${planned_package_names[$metadata_name]:-false} != true ]]; then
+			missing_targets+=("$metadata_name")
+		fi
+	done
+
+	if ((${#unexpected_packages[@]} > 0)); then
+		printf 'Refusing to install repository dependencies not supplied by this bundle:\n' >&2
+		printf '  %s\n' "${unexpected_packages[@]}" >&2
+		printf 'Rebuild for this exact SteamOS target or revise the explicit bundle package set.\n' >&2
+		return 1
+	fi
+	if ((${#missing_targets[@]} > 0)); then
+		printf 'Pacman transaction preview omitted bundled targets:\n' >&2
+		printf '  %s\n' "${missing_targets[@]}" >&2
+		return 1
+	fi
+
+	printf 'Pacman transaction is limited to bundled project packages.\n'
+}
+
 validate_existing_android_image() {
 	local filesystem_type check_mount loop_device validation_failed
 

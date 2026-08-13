@@ -44,6 +44,12 @@ Before requesting sudo access, the installer:
   fingerprint;
 - exits without changing SteamOS or Android when no compatible bundle exists.
 
+Before installing host packages, the installer asks Pacman to preview the full
+transaction and refuses to continue if Pacman would add any repository package
+outside the verified project bundle. Runtime dependencies must already be
+satisfied by the exact target SteamOS installation. Dependency checking remains
+enabled during installation; the installer never bypasses it with `--nodeps`.
+
 A SteamOS version number alone is not treated as proof of binary
 compatibility. Normal installation has no option to silently substitute a
 bundle built for a different fingerprint.

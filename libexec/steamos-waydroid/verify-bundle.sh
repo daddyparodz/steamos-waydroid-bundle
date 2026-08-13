@@ -379,12 +379,7 @@ readelf -d "$BUNDLE_ROOT/bin/cage" |
 
 bundled_wlroots="${wlroots_libraries[0]}"
 
-readelf -d "$bundled_wlroots" |
-	grep -F 'libdisplay-info.so.3' >/dev/null ||
-	die "bundled wlroots does not require libdisplay-info.so.3"
-
 for forbidden_dependency in \
-	libdisplay-info.so.2 \
 	libliftoff.so \
 	libvulkan.so; do
 

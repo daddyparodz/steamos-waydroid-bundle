@@ -486,6 +486,14 @@ else
 	echo Target bundle does not require a separate Binder kernel module.
 fi
 
+echo Verifying that installation needs no additional repository packages.
+echo "*** pacman bundle-only transaction preflight ***" >>"$LOGFILE"
+if ! verify_bundle_only_pacman_transaction "${host_packages[@]}" >>"$LOGFILE" 2>&1; then
+	echo The package transaction requires something outside the verified bundle. >&2
+	echo Review the preflight details in: "$LOGFILE" >&2
+	abort_run
+fi
+
 if { printf '%s\n' "$current_password" |
 	sudo -S pacman -U --noconfirm "${host_packages[@]}"; } >>"$LOGFILE" 2>&1; then
 	echo Waydroid has been installed!

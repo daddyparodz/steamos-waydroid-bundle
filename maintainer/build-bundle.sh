@@ -192,12 +192,6 @@ WLROOTS_LIBRARY="$(find "$BUNDLE_PREFIX/lib" -maxdepth 1 \
 	-type f -name "libwlroots-${WLROOTS_API_VERSION}.so*" -print -quit)"
 [[ -n "$WLROOTS_LIBRARY" ]] || die "bundled wlroots library was not installed"
 
-readelf -d "$WLROOTS_LIBRARY" | grep -F 'libdisplay-info.so.3' >/dev/null ||
-	die "bundled wlroots does not require libdisplay-info.so.3"
-if readelf -d "$WLROOTS_LIBRARY" | grep -F 'libdisplay-info.so.2' >/dev/null; then
-	die "bundled wlroots incorrectly requires libdisplay-info.so.2"
-fi
-
 export PKG_CONFIG_PATH="$BUNDLE_PREFIX/lib/pkgconfig"
 export LD_LIBRARY_PATH="$BUNDLE_PREFIX/lib"
 

@@ -68,3 +68,4 @@ jobs:
           tests/test-maintainer-config.sh
           tests/test-shell-messages.sh
           tests/test-binder-lock.sh
+          tests/test-package-transaction.sh

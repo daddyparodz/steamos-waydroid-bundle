@@ -16,6 +16,19 @@ else
 	exit 1
 fi
 
+if [[ -r "$SCRIPT_DIR/lib/kernel-capabilities.sh" ]]; then
+	# shellcheck source=lib/kernel-capabilities.sh
+	source "$SCRIPT_DIR/lib/kernel-capabilities.sh"
+	# shellcheck source=lib/bundle-compatibility.sh
+	source "$SCRIPT_DIR/lib/bundle-compatibility.sh"
+else
+	# Installed bundle layout.
+	# shellcheck source=lib/kernel-capabilities.sh
+	source "$SCRIPT_DIR/kernel-capabilities.sh"
+	# shellcheck source=lib/bundle-compatibility.sh
+	source "$SCRIPT_DIR/bundle-compatibility.sh"
+fi
+
 BUNDLE_ROOT="${1:-}"
 OUTPUT_FILE="${2:-/dev/stdout}"
 EXPECTED="$BUNDLE_ROOT/target-fingerprint.env"
@@ -41,6 +54,7 @@ expected_abi="$(fingerprint_value "$EXPECTED" ABI_SHA256)"
 current_version="$(fingerprint_value "$CURRENT" STEAMOS_VERSION_ID)"
 current_build="$(fingerprint_value "$CURRENT" STEAMOS_BUILD_ID)"
 current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
+compatibility="$(bundle_compatibility "$EXPECTED" "$CURRENT")"
 
 {
 	printf '# SteamOS Waydroid compatibility report\n\n'
@@ -72,6 +86,9 @@ current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
 	printf '| Compatibility hash | `%s` | `%s` | %s |\n\n' \
 		"$expected_abi" "$current_abi" \
 		"$([[ "$expected_abi" == "$current_abi" ]] && printf yes || printf no)"
+	printf -- '- Compatibility state: `%s`\n' "$compatibility"
+	printf -- '- Running kernel has built-in Binder: `%s`\n\n' \
+		"$(running_kernel_has_builtin_binder && printf yes || printf no)"
 
 	printf '## Package differences\n\n'
 	differences=0
@@ -91,12 +108,10 @@ current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
 	fi
 
 	printf '\n## Assessment\n\n'
-	if [[ "$expected_version" == "$current_version" ]] &&
-		[[ "$expected_build" == "$current_build" ]] &&
-		[[ "$expected_abi" == "$current_abi" ]]; then
+	if [[ "$compatibility" == exact ]]; then
 		printf 'The bundle matches this target exactly. Investigate ELF resolution, runtime logs, or compositor behavior rather than rebuilding solely for compatibility.\n'
-	elif [[ "$expected_abi" == "$current_abi" ]]; then
-		printf 'SteamOS release metadata changed but the tracked userspace compatibility hash is unchanged. A controlled override test is possible, but a target-specific rebuild remains the conservative default.\n'
+	elif [[ "$compatibility" == abi-compatible ]]; then
+		printf 'The bundle is supported through the ABI-compatible fallback. The tracked userspace ABI is unchanged and the running kernel provides Binder, so the bundle-specific Binder package is not needed.\n'
 	else
 		printf 'The tracked userspace stack changed. Create a fresh target snapshot and rebuild before activation. If compilation fails, inspect the Fedora build failure report for the dependency or API that changed.\n'
 	fi

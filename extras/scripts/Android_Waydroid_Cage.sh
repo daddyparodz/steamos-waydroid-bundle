@@ -7,7 +7,7 @@ LOCAL_BUNDLE_SELECTOR="$SCRIPT_DIR/select-bundle"
 
 if [ -x "$LOCAL_BUNDLE_SELECTOR" ] &&
 	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1); then
-	kdialog --error "No installed Cage bundle matches this SteamOS build.
+	kdialog --error "No installed Cage bundle is compatible with this SteamOS host.
 
 $SELECTOR_OUTPUT
 
@@ -47,7 +47,7 @@ if ! TARGET_CHECK_OUTPUT=$("$TARGET_CHECK" "${target_check_args[@]}" 2>&1); then
 		"$COMPATIBILITY_REPORT" "$BUNDLE" "$REPORT_FILE" || true
 	fi
 
-	kdialog --error "The Cage bundle does not match this SteamOS build.
+	kdialog --error "The Cage bundle is incompatible with this SteamOS host.
 
 $TARGET_CHECK_OUTPUT
 

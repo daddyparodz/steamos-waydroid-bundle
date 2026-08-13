@@ -18,28 +18,30 @@
 > remains responsible for the resulting software.
 
 SteamOS Waydroid Bundle installs Waydroid on a Steam Deck using host packages,
-Cage, wlroots, and wlr-randr built against the Deck's exact SteamOS userspace.
+Cage, wlroots, and wlr-randr built against a matching SteamOS userspace ABI.
 It keeps the persistent Android image under the `deck` user's home so routine
 SteamOS host repair can occur without recreating Android applications,
 settings, files, or login sessions.
 
 ## Compatibility and safety model
 
-The installer supports a SteamOS release only when a verified bundle has been
-published for the Deck's exact target fingerprint. The fingerprint includes
+The installer supports a SteamOS release only when a verified compatible bundle
+has been published. The fingerprint includes
 the SteamOS release and build plus relevant compiler, runtime, Python, Wayland,
 graphics, input, and system-library versions.
 
-Published support is therefore determined by the available target bundle
-catalog rather than by the SteamOS version number alone. Development and
-`main`-branch SteamOS builds remain experimental and require an exact matching
-published bundle.
+An exact version, build, and ABI match is always preferred. If no exact bundle
+exists, a bundle with the same userspace ABI is supported when the running
+kernel provides built-in Binder; its target-specific Binder package is skipped.
+Without built-in Binder, version/build matching remains strict. Development and
+`main`-branch SteamOS builds remain experimental, and existing SteamOS-family
+and branch checks still apply.
 
 Before requesting sudo access, the installer:
 
 - confirms that it is running locally in SteamOS Desktop Mode;
 - checks the SteamOS release and update branch;
-- selects an already-installed exact-match bundle or downloads one;
+- selects an already-installed exact or ABI-compatible bundle, or downloads one;
 - verifies the archive hash, paths, manifest, ELF dependencies, and target
   fingerprint;
 - exits without changing SteamOS or Android when no compatible bundle exists.
@@ -60,17 +62,16 @@ artifact source or another source you control and trust.
 
 ## Requirements
 
-- Steam Deck running a SteamOS release for which an exact verified target
-  bundle has been published;
-- an exact published target bundle for that SteamOS userspace;
+- Steam Deck running a supported SteamOS release with a compatible verified
+  bundle available;
+- an exact or ABI-compatible published bundle for that SteamOS userspace;
 - Desktop Mode with a working graphical session;
 - a sudo password for the `deck` user;
 - at least 10 GB free under the home filesystem for a new Android install;
 - internet access for source, bundle, and Android-image downloads.
 
-SteamOS development and `main` branches are experimental. The installer
-displays an explicit warning there, and an exact target bundle is still
-mandatory.
+SteamOS development and `main` branches are experimental. The installer still
+displays an explicit warning there.
 
 ## Install
 
@@ -232,9 +233,10 @@ does not make an untrusted source safe.
 
 ### No compatible bundle
 
-The error identifies the SteamOS version, build, branch, and target. Do not
-bypass the target check for an ordinary installation. A maintainer must build
-and publish a bundle against that userspace.
+The error identifies the SteamOS version, build, branch, and target. Do not use
+the explicit mismatch override for an ordinary installation. A maintainer must
+publish a bundle with the same userspace ABI; if Binder is not built into the
+running kernel, an exact target bundle is required.
 
 ### Installer says it is not in Desktop Mode
 

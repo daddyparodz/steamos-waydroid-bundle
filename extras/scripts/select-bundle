@@ -8,14 +8,37 @@ BUILDS_ROOT="$PROJECT_ROOT/builds"
 CURRENT_LINK="$PROJECT_ROOT/current"
 TARGET_MISMATCH_ALLOW_FILE="$PROJECT_ROOT/allow-target-mismatch"
 
-bundle_matches_current_target() {
+bundle_compatibility_state() {
 	local candidate="$1"
-	[[ -d "$candidate" ]] || return 1
-	[[ -f "$candidate/.verified" ]] || return 1
-	[[ -x "$candidate/bin/cage" ]] || return 1
-	[[ -x "$candidate/bin/wlr-randr" ]] || return 1
-	[[ -x "$candidate/tools/check-bundle-target.sh" ]] || return 1
-	"$candidate/tools/check-bundle-target.sh" "$candidate" >/dev/null 2>&1
+	local state
+	[[ -d "$candidate" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	[[ -f "$candidate/.verified" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	[[ -x "$candidate/bin/cage" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	[[ -x "$candidate/bin/wlr-randr" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	[[ -x "$candidate/tools/check-bundle-target.sh" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	if state=$("$candidate/tools/check-bundle-target.sh" \
+		"$candidate" --compatibility-state 2>/dev/null); then
+		printf '%s\n' "$state"
+	elif "$candidate/tools/check-bundle-target.sh" "$candidate" >/dev/null 2>&1; then
+		printf 'exact\n'
+	else
+		printf 'incompatible\n'
+	fi
 }
 
 activate_bundle() {
@@ -28,22 +51,45 @@ activate_bundle() {
 		ln -sfn "builds/$bundle_version" current
 	)
 	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
-	printf 'Activated bundle for this SteamOS target: %s\n' "$bundle_version"
+	printf 'Activated %s bundle: %s\n' "$2" "$bundle_version"
 }
 
-if bundle_matches_current_target "$CURRENT_LINK"; then
+if [[ "$(bundle_compatibility_state "$CURRENT_LINK")" == exact ]]; then
 	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
-	printf 'Current bundle matches this SteamOS target: %s\n' \
+	printf 'Current bundle is an exact match: %s\n' \
 		"$(basename -- "$(readlink -f "$CURRENT_LINK")")"
 	exit 0
 fi
 
 while IFS= read -r candidate; do
-	if bundle_matches_current_target "$candidate"; then
-		activate_bundle "$candidate"
+	if [[ "$(bundle_compatibility_state "$candidate")" == exact ]]; then
+		activate_bundle "$candidate" exact
 		exit 0
 	fi
 done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+
+while IFS= read -r candidate; do
+	if [[ "$(bundle_compatibility_state "$candidate")" == abi-compatible ]]; then
+		activate_bundle "$candidate" ABI-compatible
+		printf 'Userspace ABI matches and the running kernel provides Binder.\n'
+		exit 0
+	fi
+done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+
+# The explicit mismatch override is deliberately considered only after every
+# supported exact and ABI-compatible candidate. The launcher repeats the
+# target check with --allow-target-mismatch when this marker matches.
+active_bundle_version="$(basename -- "$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)")"
+if [[ -n "$active_bundle_version" ]] &&
+	[[ -r "$TARGET_MISMATCH_ALLOW_FILE" ]] &&
+	[[ "$(<"$TARGET_MISMATCH_ALLOW_FILE")" == "$active_bundle_version" ]] &&
+	[[ -f "$CURRENT_LINK/.verified" ]] &&
+	[[ -x "$CURRENT_LINK/bin/cage" ]] &&
+	[[ -x "$CURRENT_LINK/bin/wlr-randr" ]] &&
+	[[ -x "$CURRENT_LINK/tools/check-bundle-target.sh" ]]; then
+	printf 'Using explicitly allowed target mismatch: %s\n' "$active_bundle_version" >&2
+	exit 0
+fi
 
 printf 'error: no installed bundle matches the running SteamOS target\n' >&2
 exit 1

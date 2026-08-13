@@ -89,6 +89,8 @@ source "$DECK_RUNTIME/installer-functions.sh"
 source "$DECK_RUNTIME/installer-sanity-checks.sh"
 # shellcheck source=libexec/steamos-waydroid/firewall-rules.sh
 source "$DECK_RUNTIME/firewall-rules.sh"
+# shellcheck source=libexec/steamos-waydroid/lib/kernel-capabilities.sh
+source "$DECK_RUNTIME/lib/kernel-capabilities.sh"
 if [ "$FULL_UNINSTALL_MODE" = true ]; then
 	STEAMOS_WAYDROID_INTERNAL=1 \
 		"$DECK_RUNTIME/uninstall.sh" --full-process
@@ -191,7 +193,7 @@ elif [ "$REINSTALL_ANDROID_MODE" = true ]; then
 	fi
 fi
 
-# Select an already-installed exact target bundle, or fetch the matching
+# Select an already-installed compatible target bundle, or fetch the matching
 # published artifact, before this installer performs privileged integration.
 if ! ensure_sanity_bundle; then
 	exit 1
@@ -431,21 +433,6 @@ fi
 # SteamOS targets with Binder built into the kernel do not carry a Binder
 # package. Targets without Binder carry exactly one steamos-waydroid-binder
 # package containing the binder_linux module built for that target kernel.
-running_kernel_has_builtin_binder() {
-	local binder_module binder_filename modules_builtin
-
-	for binder_module in binder_linux binder; do
-		binder_filename="$(modinfo -k "$(uname -r)" -F filename "$binder_module" 2>/dev/null || true)"
-		if [ "$binder_filename" = "(builtin)" ]; then
-			return 0
-		fi
-	done
-
-	modules_builtin="/usr/lib/modules/$(uname -r)/modules.builtin"
-	[ -r "$modules_builtin" ] &&
-		grep -Eq '(^|/)(binder|binder_linux)\.ko$' "$modules_builtin"
-}
-
 echo Installing waydroid packages. This can take a while.
 echo "*** pacman install waydroid packages ***" >>"$LOGFILE"
 cd "$WORKING_DIR" || abort_run

@@ -16,14 +16,37 @@ else
 	exit 1
 fi
 
-BUNDLE_ROOT="${1:-}"
-ALLOW_MISMATCH=false
-if [[ ${2:-} == --allow-target-mismatch ]]; then
-	ALLOW_MISMATCH=true
-elif [[ $# -ne 1 ]]; then
-	printf 'usage: %s BUNDLE_DIRECTORY [--allow-target-mismatch]\n' "$0" >&2
+if [[ -r "$SCRIPT_DIR/lib/kernel-capabilities.sh" ]]; then
+	# shellcheck source=lib/kernel-capabilities.sh
+	source "$SCRIPT_DIR/lib/kernel-capabilities.sh"
+	# shellcheck source=lib/bundle-compatibility.sh
+	source "$SCRIPT_DIR/lib/bundle-compatibility.sh"
+elif [[ -r "$SCRIPT_DIR/kernel-capabilities.sh" ]]; then
+	# Installed bundle layout.
+	# shellcheck source=lib/kernel-capabilities.sh
+	source "$SCRIPT_DIR/kernel-capabilities.sh"
+	# shellcheck source=lib/bundle-compatibility.sh
+	source "$SCRIPT_DIR/bundle-compatibility.sh"
+else
+	printf 'error: kernel capability helper is missing\n' >&2
 	exit 1
 fi
+
+BUNDLE_ROOT="${1:-}"
+ALLOW_MISMATCH=false
+PRINT_STATE=false
+shift || true
+while (($#)); do
+	case "$1" in
+	--allow-target-mismatch) ALLOW_MISMATCH=true ;;
+	--compatibility-state) PRINT_STATE=true ;;
+	*)
+		printf 'usage: %s BUNDLE_DIRECTORY [--allow-target-mismatch] [--compatibility-state]\n' "$0" >&2
+		exit 1
+		;;
+	esac
+	shift
+done
 
 EXPECTED="$BUNDLE_ROOT/target-fingerprint.env"
 [[ -r "$EXPECTED" ]] || {
@@ -44,6 +67,13 @@ expected_abi="$(fingerprint_value "$EXPECTED" ABI_SHA256)"
 current_version="$(fingerprint_value "$CURRENT" STEAMOS_VERSION_ID)"
 current_build="$(fingerprint_value "$CURRENT" STEAMOS_BUILD_ID)"
 current_abi="$(fingerprint_value "$CURRENT" ABI_SHA256)"
+compatibility="$(bundle_compatibility "$EXPECTED" "$CURRENT")"
+
+if [[ "$PRINT_STATE" == true ]]; then
+	printf '%s\n' "$compatibility"
+	[[ "$compatibility" != incompatible || "$ALLOW_MISMATCH" == true ]]
+	exit
+fi
 
 mismatches=()
 [[ "$expected_version" == "$current_version" ]] ||
@@ -53,8 +83,15 @@ mismatches=()
 [[ "$expected_abi" == "$current_abi" ]] ||
 	mismatches+=("userspace ABI fingerprint: built for $expected_abi, running $current_abi")
 
-if ((${#mismatches[@]} > 0)); then
-	printf 'Private bundle target mismatch:\n' >&2
+if [[ "$compatibility" == exact ]]; then
+	printf 'Exact bundle match: SteamOS %s build %s (ABI %s).\n' \
+		"$current_version" "$current_build" "${current_abi:0:12}"
+elif [[ "$compatibility" == abi-compatible ]]; then
+	printf 'ABI-compatible bundle match.\n'
+	printf 'Using ABI-compatible bundle built for a different SteamOS release.\n'
+	printf 'Userspace ABI matches and the running kernel provides Binder.\n'
+elif ((${#mismatches[@]} > 0)); then
+	printf 'Incompatible bundle:\n' >&2
 	printf '  %s\n' "${mismatches[@]}" >&2
 	if [[ "$ALLOW_MISMATCH" != true ]]; then
 		printf 'Rebuild for this SteamOS target, or explicitly use --allow-target-mismatch for testing.\n' >&2
@@ -62,6 +99,6 @@ if ((${#mismatches[@]} > 0)); then
 	fi
 	printf 'WARNING: continuing with an explicitly allowed target mismatch.\n' >&2
 else
-	printf 'Bundle target matches SteamOS %s build %s (ABI %s).\n' \
-		"$current_version" "$current_build" "${current_abi:0:12}"
+	printf 'Incompatible bundle: target metadata is incomplete.\n' >&2
+	exit 1
 fi

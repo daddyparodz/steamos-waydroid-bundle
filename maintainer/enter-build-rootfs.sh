@@ -39,6 +39,8 @@ printf 'Entering the copied SteamOS rootfs.\n'
 printf 'Selected compositor versions:\n'
 printf '  wlroots: %s\n' "$WLROOTS_VERSION"
 printf '  Cage:    %s\n' "$CAGE_VERSION"
+printf 'Selected bundle version:\n'
+printf '  Target Bundle:    %s\n' "$BUNDLE_VERSION"
 printf 'First prepare with: /repo/maintainer/prepare-build-rootfs.sh\n'
 printf 'Then build the bundled compositor and host packages with:\n'
 printf '  /repo/maintainer/build-bundle.sh\n\n'

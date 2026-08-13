@@ -47,12 +47,14 @@ setup_case() {
 	MOCK_FIREWALL_ROOT="$CASE_ROOT/firewalld"
 	mkdir -p \
 		"$CASE_HOME/Android_Waydroid" \
+		"$CASE_HOME/Waydroid Share" \
 		"$CASE_HOME/.local/share/waydroid" \
 		"$CASE_REPO/libexec/steamos-waydroid" \
 		"$CASE_REPO/extras" \
 		"$MOCK_BIN" "$MOCK_STATE" \
 		"$MOCK_FIREWALL_ROOT/zones" "$MOCK_FIREWALL_ROOT/policies"
 	printf 'android image\n' >"$CASE_HOME/Android_Waydroid/waydroid.img"
+	printf 'user file\n' >"$CASE_HOME/Waydroid Share/keep.txt"
 	cp "$REPO_ROOT/libexec/steamos-waydroid/uninstall.sh" \
 		"$CASE_REPO/libexec/steamos-waydroid/uninstall.sh"
 	cp "$REPO_ROOT/libexec/steamos-waydroid/firewall-rules.sh" \
@@ -223,6 +225,18 @@ test_success_removes_explicit_packages_separately() {
 		return 1
 	fi
 	assert_log 'stage=reset complete' "$(latest_reset_log)" || return 1
+}
+
+test_shared_folder_is_unmounted_and_preserved() {
+	setup_case shared-folder-preserved
+	run_uninstall share_mounted
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	assert_file "$CASE_HOME/Waydroid Share/keep.txt" || return 1
+	assert_log '^sudo umount .*/Waydroid Share$' "$MOCK_LOG" || return 1
+	if grep -Eq '^(sudo )?rm .*Waydroid Share' "$MOCK_LOG"; then
+		printf 'not ok - uninstall attempted to delete the shared folder\n' >&2
+		return 1
+	fi
 }
 
 test_firewall_active_targeted_cleanup() {
@@ -428,6 +442,7 @@ tests=(
 	test_existing_staging_is_recovered
 	test_ambiguous_staging_is_refused
 	test_success_removes_explicit_packages_separately
+	test_shared_folder_is_unmounted_and_preserved
 	test_firewall_active_targeted_cleanup
 	test_firewall_inactive_offline_cleanup
 	test_firewall_absent_rules_are_idempotent

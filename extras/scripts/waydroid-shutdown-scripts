@@ -5,6 +5,16 @@ set -Eeuo pipefail
 IMAGE=/home/deck/Android_Waydroid/waydroid.img
 PID_MAX_STATE=/home/deck/Android_Waydroid/orig_kernel.pid_max
 
+SHARED_FOLDER_LIB="${STEAMOS_WAYDROID_SHARED_FOLDER_LIB:-/usr/lib/steamos-waydroid/shared-folder.sh}"
+if [ -r "$SHARED_FOLDER_LIB" ]; then
+	# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
+	source "$SHARED_FOLDER_LIB"
+	USER_HOME="$(waydroid_user_home)"
+else
+	printf 'error: Waydroid shared-folder helper is missing: %s\n' "$SHARED_FOLDER_LIB" >&2
+	exit 1
+fi
+
 if [ -r "$PID_MAX_STATE" ]; then
 	saved_pid_max=$(cat "$PID_MAX_STATE")
 	if [[ "$saved_pid_max" =~ ^[0-9]+$ ]]; then
@@ -15,6 +25,8 @@ fi
 
 systemctl stop waydroid-container.service || true
 systemctl stop firewalld.service || true
+
+unmount_waydroid_share "$USER_HOME"
 
 if findmnt --mountpoint /var/lib/waydroid >/dev/null; then
 	umount /var/lib/waydroid || true

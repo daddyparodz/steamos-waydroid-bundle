@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 ANDROID_HOME="$HOME/Android_Waydroid"
 ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
 WAYDROID_USER_STATE="$HOME/.local/share/waydroid"
+WAYDROID_SHARE_TARGET="$WAYDROID_USER_STATE/data/media/0/Waydroid Share"
 WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid"
 PRESERVATION_CANDIDATE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid-preserved-reset"
@@ -355,6 +356,17 @@ if [[ -n "$remaining_waydroid_processes" ]]; then
 	exit 1
 fi
 
+# Unmount this explicitly before any Android-state cleanup. Otherwise a purge
+# could traverse the bind target and delete files from ~/Waydroid Share.
+if findmnt --mountpoint "$WAYDROID_SHARE_TARGET" >/dev/null 2>&1; then
+	sudo umount "$WAYDROID_SHARE_TARGET"
+fi
+if findmnt --mountpoint "$WAYDROID_SHARE_TARGET" >/dev/null 2>&1; then
+	printf 'error: Waydroid shared folder is still mounted; reset stopped: %s\n' \
+		"$WAYDROID_SHARE_TARGET" >&2
+	exit 1
+fi
+
 if findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'; then
 	sudo umount -R /var/lib/waydroid
 fi
@@ -559,7 +571,11 @@ sudo rm -f -- \
 	/usr/bin/waydroid-shutdown-scripts \
 	/usr/bin/waydroid-mount \
 	/usr/bin/waydroid-firewall
-sudo rm -rf -- /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra
+sudo rm -rf -- \
+	/var/lib/waydroid \
+	/usr/lib/waydroid \
+	/usr/lib/steamos-waydroid \
+	/etc/waydroid-extra
 stage_complete remove-system-files
 
 if [[ "$KEEP_ANDROID_STATE" == true ]]; then

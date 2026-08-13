@@ -493,6 +493,8 @@ cleanup_exit() {
 	# delete the waydroid directories
 	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S rm -rf /var/lib/waydroid &>/dev/null
+	# shellcheck disable=SC2154
+	echo -e "$current_password\n" | sudo -S rm -rf /usr/lib/steamos-waydroid &>/dev/null
 
 	# delete waydroid config and scripts
 	# shellcheck disable=SC2154

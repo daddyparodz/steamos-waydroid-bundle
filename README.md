@@ -85,6 +85,14 @@ cd ~/steamos-waydroid-bundle
 ./steamos-waydroid-installer.sh
 ```
 
+## Shared folder
+
+Install and repair ensure that `~/Waydroid Share` exists without replacing an
+existing directory or changing its contents, ownership, or permissions. While
+Waydroid is running, the normal mount lifecycle bind-mounts it at Android shared
+storage as `Waydroid Share`. Shutdown and uninstall unmount it when necessary,
+but uninstall never deletes the host folder or the files inside it.
+
 On first run, the installer creates an ignored machine-local
 `.deck-config.env` with mode `0600` and selects the official public bundle
 Release. It then obtains the exact bundle before making privileged host

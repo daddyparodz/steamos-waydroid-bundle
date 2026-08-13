@@ -91,6 +91,8 @@ source "$DECK_RUNTIME/installer-sanity-checks.sh"
 source "$DECK_RUNTIME/firewall-rules.sh"
 # shellcheck source=libexec/steamos-waydroid/lib/kernel-capabilities.sh
 source "$DECK_RUNTIME/lib/kernel-capabilities.sh"
+# shellcheck source=libexec/steamos-waydroid/shared-folder.sh
+source "$DECK_RUNTIME/shared-folder.sh"
 if [ "$FULL_UNINSTALL_MODE" = true ]; then
 	STEAMOS_WAYDROID_INTERNAL=1 \
 		"$DECK_RUNTIME/uninstall.sh" --full-process
@@ -196,6 +198,12 @@ fi
 # Select an already-installed compatible target bundle, or fetch the matching
 # published artifact, before this installer performs privileged integration.
 if ! ensure_sanity_bundle; then
+	exit 1
+fi
+
+# This runs as the normal SteamOS user. Existing contents, ownership, and
+# permissions are deliberately left untouched.
+if ! ensure_waydroid_share_source "$HOME"; then
 	exit 1
 fi
 
@@ -538,6 +546,9 @@ echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-startup-scrip
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-shutdown-scripts /usr/bin/waydroid-shutdown-scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-mount /usr/bin/waydroid-mount
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-firewall /usr/bin/waydroid-firewall
+echo -e "$current_password\n" | sudo -S mkdir -p /usr/lib/steamos-waydroid
+echo -e "$current_password\n" | sudo -S cp \
+	libexec/steamos-waydroid/shared-folder.sh /usr/lib/steamos-waydroid/shared-folder.sh
 echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
 
 # custom sudoers file do not ask for sudo for the custom waydroid scripts
@@ -629,6 +640,7 @@ if [ "$REPAIR_MODE" = true ]; then
 		/usr/bin/waydroid-shutdown-scripts \
 		/usr/bin/waydroid-mount \
 		/usr/bin/waydroid-firewall \
+		/usr/lib/steamos-waydroid/shared-folder.sh \
 		/usr/lib/systemd/system/waydroid-container.service \
 		/etc/sudoers.d/zzzzzzzz-waydroid; do
 		if [ ! -e "$required_file" ]; then

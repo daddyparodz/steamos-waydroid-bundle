@@ -43,11 +43,18 @@ pgrep)
 findmnt)
 	if [[ "$*" == *'-T /usr'* ]]; then
 		printf 'rw,relatime\n'
+	elif [[ "$*" == *'--mountpoint'* && "$*" == *'Waydroid Share'* ]]; then
+		[[ "$SCENARIO" == share_mounted && ! -e "$MOCK_STATE/share-unmounted" ]]
 	elif [[ "$SCENARIO" == nested_mount ]]; then
 		printf '/var/lib/waydroid/data\n'
+	else
+		exit 1
 	fi
 	;;
 umount)
+	if [[ "$*" == *'Waydroid Share'* ]]; then
+		: >"$MOCK_STATE/share-unmounted"
+	fi
 	exit 0
 	;;
 losetup)

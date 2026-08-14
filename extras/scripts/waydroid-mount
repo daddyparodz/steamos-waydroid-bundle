@@ -7,18 +7,6 @@ IMAGE=/home/deck/Android_Waydroid/waydroid.img
 WAYDROID_MOUNT=/var/lib/waydroid
 LOOP_DEVICE=""
 MOUNTED_BY_SCRIPT=false
-SHARE_MOUNTED_BY_SCRIPT=false
-
-SHARED_FOLDER_LIB="${STEAMOS_WAYDROID_SHARED_FOLDER_LIB:-/usr/lib/steamos-waydroid/shared-folder.sh}"
-[[ -r "$SHARED_FOLDER_LIB" ]] || {
-	printf 'error: Waydroid shared-folder helper is missing: %s\n' "$SHARED_FOLDER_LIB" >&2
-	exit 1
-}
-# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
-source "$SHARED_FOLDER_LIB"
-USER_HOME="$(waydroid_user_home)"
-SHARE_SOURCE="$USER_HOME/Waydroid Share"
-SHARE_TARGET="$USER_HOME/.local/share/waydroid/data/media/0/Waydroid Share"
 
 die() {
 	printf 'error: %s\n' "$*" >&2
@@ -45,10 +33,6 @@ binder_die() {
 }
 
 cleanup_failed_mount() {
-	if [[ "$SHARE_MOUNTED_BY_SCRIPT" == true ]] &&
-		findmnt --mountpoint "$SHARE_TARGET" >/dev/null 2>&1; then
-		umount "$SHARE_TARGET" 2>/dev/null || true
-	fi
 	if [[ "$MOUNTED_BY_SCRIPT" == true ]] &&
 		findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
 		umount "$WAYDROID_MOUNT" 2>/dev/null || true
@@ -236,20 +220,6 @@ LOOP_DEVICE="$(losetup --find --show "$IMAGE")" ||
 mount -t ext4 "$LOOP_DEVICE" "$WAYDROID_MOUNT" || die "could not mount the Android image"
 MOUNTED_BY_SCRIPT=true
 validate_mounted_image
-share_was_mounted=false
-if findmnt --mountpoint "$SHARE_TARGET" >/dev/null 2>&1; then
-	share_was_mounted=true
-fi
-if ! mount_waydroid_share "$USER_HOME"; then
-	if [[ "$share_was_mounted" == false ]] &&
-		findmnt --mountpoint "$SHARE_TARGET" >/dev/null 2>&1; then
-		SHARE_MOUNTED_BY_SCRIPT=true
-	fi
-	die "Waydroid shared-folder setup failed: $SHARE_SOURCE -> $SHARE_TARGET"
-fi
-if [[ "$share_was_mounted" == false ]]; then
-	SHARE_MOUNTED_BY_SCRIPT=true
-fi
 
 trap - EXIT HUP INT TERM
-printf 'Binder, Android image, and shared-folder preflight passed.\n'
+printf 'Binder and Android image preflight passed.\n'

@@ -2,40 +2,30 @@
 
 BOOT_TIMEOUT_SECONDS=90
 
+SHARED_FOLDER_LIB="${STEAMOS_WAYDROID_SHARED_FOLDER_LIB:-/usr/lib/steamos-waydroid/shared-folder.sh}"
+if [ -r "$SHARED_FOLDER_LIB" ]; then
+	# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
+	source "$SHARED_FOLDER_LIB"
+	if ! USER_HOME="$(waydroid_user_home)"; then
+		exit 1
+	fi
+else
+	printf 'error: Waydroid shared-folder helper is missing: %s\n' "$SHARED_FOLDER_LIB" >&2
+	exit 1
+fi
+
 # capture the existing kernel.pid_max value
 sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >/home/deck/Android_Waydroid/orig_kernel.pid_max
 
 # set the kernel.pid_max to 65535
 sudo sysctl -w kernel.pid_max=65535
 
-# Bound both each query and the overall boot wait. Missing Binder or a failed
-# container must return control to the launcher rather than poll forever.
-boot_deadline=$((SECONDS + BOOT_TIMEOUT_SECONDS))
+# Wait for Android itself and user 0's emulated-storage view. Binding before
+# this point leaves /data/media/0 populated but Android's /storage/emulated/0
+# view stale for the lifetime of the session.
+mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 || exit $?
 
-while true; do
-	android_ready=$(
-		timeout 5 waydroid shell -- sh -c 'pm path android' 2>/dev/null || true
-	)
-
-	if [[ "$android_ready" == package:* ]]; then
-		break
-	fi
-
-	if ! systemctl is-active --quiet waydroid-container.service; then
-		echo "error: Waydroid container stopped before Android completed boot" >&2
-		systemctl status --no-pager waydroid-container.service >&2 || true
-		exit 1
-	fi
-
-	if ((SECONDS >= boot_deadline)); then
-		echo "error: Android did not complete boot within $BOOT_TIMEOUT_SECONDS seconds" >&2
-		exit 124
-	fi
-
-	sleep 5
-done
-
-# This are the commands to execute once Android boot is completed
+# These are the commands to execute once Android boot and shared storage are ready.
 
 # Steam Deck controller to work in Waydroid
 echo add | tee /sys/devices/virtual/input/input*/event*/uevent

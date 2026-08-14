@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Shared-folder lifecycle helpers. This file is sourced by both the unprivileged
-# installer and the privileged mount/shutdown scripts.
+# Shared-folder lifecycle helpers shared by the unprivileged installer/launcher
+# and the privileged startup/shutdown scripts.
 
 waydroid_user_home() {
 	local user_name="${SUDO_USER:-deck}"
@@ -56,6 +56,52 @@ waydroid_share_is_correctly_mounted() {
 	[[ "$source_identity" == "$target_identity" ]]
 }
 
+wait_for_waydroid_emulated_storage() {
+	local timeout_seconds="${1:-90}"
+	local poll_seconds="${2:-2}"
+	local query_timeout_seconds="${3:-5}"
+	local deadline
+
+	[[ "$timeout_seconds" =~ ^[0-9]+$ ]] || {
+		printf 'error: invalid Waydroid emulated-storage timeout: %s\n' \
+			"$timeout_seconds" >&2
+		return 2
+	}
+	[[ "$poll_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+		printf 'error: invalid Waydroid emulated-storage polling interval: %s\n' \
+			"$poll_seconds" >&2
+		return 2
+	}
+	[[ "$query_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || {
+		printf 'error: invalid Waydroid storage-query timeout: %s\n' \
+			"$query_timeout_seconds" >&2
+		return 2
+	}
+
+	deadline=$((SECONDS + timeout_seconds))
+	while true; do
+		if timeout "$query_timeout_seconds" waydroid shell -- sh -c \
+			'pm path android 2>/dev/null | grep -q "^package:" && test -d /storage/emulated/0 && test -r /storage/emulated/0 && test -w /storage/emulated/0' \
+			>/dev/null 2>&1; then
+			return 0
+		fi
+
+		if ! systemctl is-active --quiet waydroid-container.service; then
+			printf 'error: Waydroid container stopped before Android user 0 emulated storage became ready\n' >&2
+			systemctl status --no-pager waydroid-container.service >&2 || true
+			return 1
+		fi
+
+		if ((SECONDS >= deadline)); then
+			printf 'error: Android user 0 emulated storage did not become ready at /storage/emulated/0 within %s seconds\n' \
+				"$timeout_seconds" >&2
+			return 124
+		fi
+
+		sleep "$poll_seconds"
+	done
+}
+
 mount_waydroid_share() {
 	local user_home="$1"
 	local share_source="$user_home/Waydroid Share"
@@ -89,9 +135,22 @@ mount_waydroid_share() {
 	if ! waydroid_share_is_correctly_mounted "$share_source" "$share_target"; then
 		printf 'error: Waydroid shared-folder bind mount could not be verified: %s -> %s\n' \
 			"$share_source" "$share_target" >&2
+		if ! umount "$share_target"; then
+			printf 'error: could not clean up the unverified Waydroid shared-folder bind mount: %s\n' \
+				"$share_target" >&2
+		fi
 		return 1
 	fi
 	printf 'Mounted Waydroid shared folder: %s -> %s\n' "$share_source" "$share_target"
+}
+
+mount_waydroid_share_when_ready() {
+	local user_home="$1"
+	local timeout_seconds="${2:-90}"
+	local poll_seconds="${3:-2}"
+
+	wait_for_waydroid_emulated_storage "$timeout_seconds" "$poll_seconds" || return
+	mount_waydroid_share "$user_home"
 }
 
 unmount_waydroid_share() {

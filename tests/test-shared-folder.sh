@@ -58,11 +58,29 @@ stat)
 		printf '42:200\n'
 	fi
 	;;
+waydroid)
+	attempt=0
+	[[ ! -f "$MOCK_STATE/ready-attempts" ]] || attempt="$(<"$MOCK_STATE/ready-attempts")"
+	attempt=$((attempt + 1))
+	printf '%s\n' "$attempt" >"$MOCK_STATE/ready-attempts"
+	[[ "$*" == *'pm path android'*'/storage/emulated/0'* ]] || exit 2
+	((attempt >= ${MOCK_READY_AFTER:-1}))
+	;;
+systemctl)
+	if [[ ${1:-} == is-active ]]; then
+		[[ ${MOCK_CONTAINER_ACTIVE:-true} == true ]]
+	else
+		printf 'mock Waydroid container status\n' >&2
+	fi
+	;;
+sleep)
+	printf 'sleep %s\n' "${1:-}" >>"$MOCK_STATE/counts"
+	;;
 *) exit 127 ;;
 esac
 EOF
 chmod +x "$MOCK_BIN/shared-folder-command"
-for command_name in getent findmnt mount umount stat; do
+for command_name in getent findmnt mount umount stat waydroid systemctl sleep; do
 	ln -s shared-folder-command "$MOCK_BIN/$command_name"
 done
 
@@ -101,8 +119,52 @@ unmount_waydroid_share "$TEST_HOME"
 [[ "$(grep -c '^umount$' "$MOCK_STATE/counts")" == 1 ]] ||
 	fail 'already-unmounted shutdown was not idempotent'
 
+rm -f -- "$MOCK_STATE/ready-attempts"
+export MOCK_READY_AFTER=3 MOCK_CONTAINER_ACTIVE=true
+mount_waydroid_share_when_ready "$TEST_HOME" 10 0
+[[ "$(<"$MOCK_STATE/ready-attempts")" == 3 ]] ||
+	fail 'delayed emulated-storage readiness was not polled'
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == 2 ]] ||
+	fail 'share was not mounted after emulated storage became ready'
+
+# A second post-readiness setup must recognize the existing bind rather than
+# stacking another mount.
+MOCK_READY_AFTER=1 mount_waydroid_share_when_ready "$TEST_HOME" 10 0
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == 2 ]] ||
+	fail 'post-readiness setup duplicated the existing bind mount'
+unmount_waydroid_share "$TEST_HOME"
+
+rm -f -- "$MOCK_STATE/ready-attempts"
+export MOCK_READY_AFTER=999
+if mount_waydroid_share_when_ready "$TEST_HOME" 0 0 \
+	2>"$TEST_ROOT/readiness-timeout.log"; then
+	fail 'emulated-storage readiness timeout unexpectedly succeeded'
+else
+	readiness_status=$?
+fi
+[[ "$readiness_status" == 124 ]] ||
+	fail "emulated-storage readiness timeout returned $readiness_status instead of 124"
+grep -Fq '/storage/emulated/0 within 0 seconds' "$TEST_ROOT/readiness-timeout.log" ||
+	fail 'emulated-storage readiness timeout did not report the path and timeout'
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == 2 ]] ||
+	fail 'readiness timeout performed a bind mount'
+
+if grep -Eq '(^|[[:space:]])mount_waydroid_share([[:space:]]|$)' \
+	"$REPO_ROOT/extras/scripts/waydroid-mount"; then
+	fail 'early Waydroid image mount phase still invokes the shared-folder bind'
+fi
+grep -Fq 'mount_waydroid_share_when_ready "$USER_HOME"' \
+	"$REPO_ROOT/extras/scripts/waydroid-startup-scripts" ||
+	fail 'post-startup script does not invoke the readiness-gated shared-folder bind'
+ensure_line="$(grep -nF 'ensure_waydroid_share_source "$HOME"' \
+	"$REPO_ROOT/extras/scripts/Android_Waydroid_Cage.sh" | cut -d: -f1)"
+mount_phase_line="$(grep -nF 'sudo /usr/bin/waydroid-mount' \
+	"$REPO_ROOT/extras/scripts/Android_Waydroid_Cage.sh" | cut -d: -f1)"
+[[ -n "$ensure_line" && -n "$mount_phase_line" && "$ensure_line" -lt "$mount_phase_line" ]] ||
+	fail 'launcher does not ensure the host share before the persistent-storage mount phase'
+
 resolved_home="$(HOME=/root SUDO_USER=testuser waydroid_user_home)"
 [[ "$resolved_home" == "$TEST_HOME" ]] ||
 	fail 'privileged home resolution used root instead of the invoking user'
 
-printf 'ok - shared-folder creation, bind lifecycle, and user-home resolution\n'
+printf 'ok - shared-folder readiness, bind lifecycle, and user-home resolution\n'

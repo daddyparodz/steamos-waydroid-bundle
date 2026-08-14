@@ -72,6 +72,22 @@ if [ -z "$RESOLUTION" ] ||
 	exit 1
 fi
 
+SHARED_FOLDER_LIB="${STEAMOS_WAYDROID_SHARED_FOLDER_LIB:-/usr/lib/steamos-waydroid/shared-folder.sh}"
+if [ ! -r "$SHARED_FOLDER_LIB" ]; then
+	kdialog --error "Waydroid shared-folder helper is missing: $SHARED_FOLDER_LIB
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the host integration."
+	exit 1
+fi
+# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
+source "$SHARED_FOLDER_LIB"
+if ! SHARE_OUTPUT=$(ensure_waydroid_share_source "$HOME" 2>&1); then
+	kdialog --error "Waydroid shared-folder setup failed.
+
+$SHARE_OUTPUT"
+	exit 1
+fi
+
 cleanup_required=false
 LAUNCH_ERROR_LOG="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-launch.XXXXXX")"
 
@@ -156,15 +172,6 @@ if [ -z "${1:-}" ]; then
 
 		/usr/bin/waydroid show-full-ui &
 		readonly WAYDROID_SESSION_PID=$!
-		sleep 10
-
-		waydroid prop set \
-			persist.waydroid.fake_wifi \
-			"$(cat "$CONFIG_DIR/fake_wifi")"
-
-		waydroid prop set \
-			persist.waydroid.fake_touch \
-			"$(cat "$CONFIG_DIR/fake_touch")"
 
 		if ! sudo /usr/bin/waydroid-startup-scripts; then
 			jobs -pr | while IFS= read -r child_pid; do
@@ -173,6 +180,14 @@ if [ -z "${1:-}" ]; then
 			wait 2>/dev/null || true
 			exit 1
 		fi
+
+		waydroid prop set \
+			persist.waydroid.fake_wifi \
+			"$(cat "$CONFIG_DIR/fake_wifi")"
+
+		waydroid prop set \
+			persist.waydroid.fake_touch \
+			"$(cat "$CONFIG_DIR/fake_touch")"
 
 		wait "$WAYDROID_SESSION_PID"
 	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" \
@@ -200,15 +215,6 @@ else
 
 		/usr/bin/waydroid session start &
 		readonly WAYDROID_SESSION_PID=$!
-		sleep 10
-
-		waydroid prop set \
-			persist.waydroid.fake_wifi \
-			"$(cat "$CONFIG_DIR/fake_wifi")"
-
-		waydroid prop set \
-			persist.waydroid.fake_touch \
-			"$(cat "$CONFIG_DIR/fake_touch")"
 
 		if ! sudo /usr/bin/waydroid-startup-scripts; then
 			jobs -pr | while IFS= read -r child_pid; do
@@ -217,6 +223,14 @@ else
 			wait 2>/dev/null || true
 			exit 1
 		fi
+
+		waydroid prop set \
+			persist.waydroid.fake_wifi \
+			"$(cat "$CONFIG_DIR/fake_wifi")"
+
+		waydroid prop set \
+			persist.waydroid.fake_touch \
+			"$(cat "$CONFIG_DIR/fake_touch")"
 		sleep 1
 
 		/usr/bin/waydroid app launch "$PACKAGE" &

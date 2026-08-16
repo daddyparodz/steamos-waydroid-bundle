@@ -486,10 +486,10 @@ else
 	echo Target bundle does not require a separate Binder kernel module.
 fi
 
-echo Verifying that installation needs no additional repository packages.
-echo "*** pacman bundle-only transaction preflight ***" >>"$LOGFILE"
-if ! verify_bundle_only_pacman_transaction "${host_packages[@]}" >>"$LOGFILE" 2>&1; then
-	echo The package transaction requires something outside the verified bundle. >&2
+echo Resolving package dependencies against the configured SteamOS repositories.
+echo "*** pacman dependency transaction preflight ***" >>"$LOGFILE"
+if ! verify_pacman_transaction_dependencies "${host_packages[@]}" >>"$LOGFILE" 2>&1; then
+	echo Pacman could not resolve a complete package transaction. >&2
 	echo Review the preflight details in: "$LOGFILE" >&2
 	abort_run
 fi

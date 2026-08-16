@@ -44,11 +44,12 @@ Before requesting sudo access, the installer:
   fingerprint;
 - exits without changing SteamOS or Android when no compatible bundle exists.
 
-Before installing host packages, the installer asks Pacman to preview the full
-transaction and refuses to continue if Pacman would add any repository package
-outside the verified project bundle. Runtime dependencies must already be
-satisfied by the exact target SteamOS installation. Dependency checking remains
-enabled during installation; the installer never bypasses it with `--nodeps`.
+Before installing host packages, the installer asks Pacman to resolve and preview
+the full transaction. Any recursively missing dependencies, such as `lxc` or
+`dnsmasq`, are installed from the repositories configured by SteamOS and listed
+in the installer log. The installer stops before making changes if Pacman cannot
+resolve the transaction or omits a verified bundle target. Dependency checking
+remains enabled; the installer never bypasses it with `--nodeps`.
 
 A SteamOS version number alone is not treated as proof of binary
 compatibility. Normal installation has no option to silently substitute a

@@ -92,10 +92,10 @@ waydroid_mounts_are_active() {
 	findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'
 }
 
-verify_bundle_only_pacman_transaction() {
-	local package_file metadata_name planned_name
+verify_pacman_transaction_dependencies() {
+	local package_file metadata_name planned_name planned_repository planned_version
 	local transaction_output
-	local -a missing_targets=() unexpected_packages=()
+	local -a missing_targets=() repository_dependencies=() invalid_sources=()
 	local -A bundled_package_names=()
 	local -A planned_package_names=()
 
@@ -121,17 +121,24 @@ verify_bundle_only_pacman_transaction() {
 	done
 
 	if ! transaction_output="$(
-		LC_ALL=C pacman -U --print --print-format '%n' "$@"
+		LC_ALL=C pacman -U --print --print-format '%n|%r|%v' "$@"
 	)"; then
 		printf 'Pacman could not resolve the bundled package transaction.\n' >&2
 		return 1
 	fi
 
-	while IFS= read -r planned_name; do
+	while IFS='|' read -r planned_name planned_repository planned_version; do
 		[[ -n "$planned_name" ]] || continue
 		planned_package_names["$planned_name"]=true
 		if [[ ${bundled_package_names[$planned_name]:-false} != true ]]; then
-			unexpected_packages+=("$planned_name")
+			if [[ ! "$planned_repository" =~ ^[A-Za-z0-9@._+-]+$ ]] ||
+				[[ -z "$planned_version" ]]; then
+				invalid_sources+=("$planned_name")
+			else
+				repository_dependencies+=(
+					"$planned_repository/$planned_name $planned_version"
+				)
+			fi
 		fi
 	done <<<"$transaction_output"
 	for metadata_name in "${!bundled_package_names[@]}"; do
@@ -140,19 +147,23 @@ verify_bundle_only_pacman_transaction() {
 		fi
 	done
 
-	if ((${#unexpected_packages[@]} > 0)); then
-		printf 'Refusing to install repository dependencies not supplied by this bundle:\n' >&2
-		printf '  %s\n' "${unexpected_packages[@]}" >&2
-		printf 'Rebuild for this exact SteamOS target or revise the explicit bundle package set.\n' >&2
-		return 1
-	fi
 	if ((${#missing_targets[@]} > 0)); then
 		printf 'Pacman transaction preview omitted bundled targets:\n' >&2
 		printf '  %s\n' "${missing_targets[@]}" >&2
 		return 1
 	fi
+	if ((${#invalid_sources[@]} > 0)); then
+		printf 'Pacman preview included dependencies without a valid sync-repository source:\n' >&2
+		printf '  %s\n' "${invalid_sources[@]}" >&2
+		return 1
+	fi
 
-	printf 'Pacman transaction is limited to bundled project packages.\n'
+	if ((${#repository_dependencies[@]} > 0)); then
+		printf 'Pacman resolved these additional dependencies from the configured SteamOS repositories:\n'
+		printf '  %s\n' "${repository_dependencies[@]}"
+	else
+		printf 'All package dependencies are already installed or supplied by the bundle.\n'
+	fi
 }
 
 validate_existing_android_image() {

@@ -23,7 +23,19 @@ EOF
 
 cat >"$MOCK_BIN/pacman" <<'EOF'
 #!/usr/bin/env bash
-tr ' ' '\n' <<<"${PLANNED_PACKAGES:?PLANNED_PACKAGES is required}"
+if [[ ${PACMAN_FAIL:-false} == true ]]; then
+	exit 1
+fi
+for package_name in ${PLANNED_PACKAGES:?PLANNED_PACKAGES is required}; do
+	case "$package_name" in
+	libglibutil | libgbinder | python-gbinder | waydroid)
+		printf '%s||1.0-1\n' "$package_name"
+		;;
+	*)
+		printf '%s|%s|1.0-1\n' "$package_name" "${PACKAGE_REPOSITORY-holo}"
+		;;
+	esac
+done
 EOF
 chmod +x "$MOCK_BIN/bsdtar" "$MOCK_BIN/pacman"
 
@@ -39,20 +51,41 @@ packages=(
 
 PATH="$MOCK_BIN:/usr/bin:/bin" \
 	PLANNED_PACKAGES='libglibutil libgbinder python-gbinder waydroid' \
-	verify_bundle_only_pacman_transaction "${packages[@]}" >/dev/null
+	verify_pacman_transaction_dependencies "${packages[@]}" >/dev/null
+
+PATH="$MOCK_BIN:/usr/bin:/bin" \
+	PLANNED_PACKAGES='libglibutil libgbinder python-gbinder waydroid lxc dnsmasq recursive-dependency' \
+	verify_pacman_transaction_dependencies "${packages[@]}" \
+	>"$TEST_ROOT/output"
+grep -Fq -- 'configured SteamOS repositories' "$TEST_ROOT/output"
+grep -Fq -- 'lxc' "$TEST_ROOT/output"
+grep -Fq -- 'dnsmasq' "$TEST_ROOT/output"
+grep -Fq -- 'recursive-dependency' "$TEST_ROOT/output"
+grep -Fq -- 'holo/lxc 1.0-1' "$TEST_ROOT/output"
 
 if PATH="$MOCK_BIN:/usr/bin:/bin" \
-	PLANNED_PACKAGES='libglibutil libgbinder python-gbinder waydroid unexpected-system-library' \
-	verify_bundle_only_pacman_transaction "${packages[@]}" \
+	PACKAGE_REPOSITORY='' \
+	PLANNED_PACKAGES='libglibutil libgbinder python-gbinder waydroid lxc' \
+	verify_pacman_transaction_dependencies "${packages[@]}" \
 	>"$TEST_ROOT/output" 2>&1; then
-	printf 'not ok - external Pacman dependency was accepted\n' >&2
+	printf 'not ok - a dependency without a repository source was accepted\n' >&2
 	exit 1
 fi
-grep -Fq -- 'unexpected-system-library' "$TEST_ROOT/output"
+grep -Fq -- 'without a valid sync-repository source' "$TEST_ROOT/output"
+
+if PATH="$MOCK_BIN:/usr/bin:/bin" \
+	PACMAN_FAIL=true \
+	PLANNED_PACKAGES=unused \
+	verify_pacman_transaction_dependencies "${packages[@]}" \
+	>"$TEST_ROOT/output" 2>&1; then
+	printf 'not ok - an unresolved Pacman transaction was accepted\n' >&2
+	exit 1
+fi
+grep -Fq -- 'could not resolve' "$TEST_ROOT/output"
 
 if PATH="$MOCK_BIN:/usr/bin:/bin" \
 	PLANNED_PACKAGES='libglibutil libgbinder python-gbinder' \
-	verify_bundle_only_pacman_transaction "${packages[@]}" \
+	verify_pacman_transaction_dependencies "${packages[@]}" \
 	>"$TEST_ROOT/output" 2>&1; then
 	printf 'not ok - incomplete Pacman preview was accepted\n' >&2
 	exit 1
@@ -68,4 +101,4 @@ if rg -n -- \
 	exit 1
 fi
 
-printf 'ok - package installation is bundle-only and SONAME-neutral\n'
+printf 'ok - package installation resolves repository dependencies and remains SONAME-neutral\n'

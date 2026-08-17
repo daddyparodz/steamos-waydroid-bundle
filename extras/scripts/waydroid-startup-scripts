@@ -23,6 +23,40 @@ resolve_waydroid_profile "$@" || exit $?
 export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
 PROFILE_HOME=${WAYDROID_IMAGE%/*}
 
+recreate_android_16_steam_input_nodes() {
+	local android_sdk event event_device major major_hex minor minor_hex product sys vendor
+
+	android_sdk="$(waydroid shell -- getprop ro.build.version.sdk 2>/dev/null)" || return 0
+	android_sdk="${android_sdk//$'\r'/}"
+	[ "$android_sdk" = "36" ] || return 0
+
+	# Android 16 / API 36 currently exposes controller sysfs devices to the
+	# Waydroid container but does not create usable /dev/input/event* nodes.
+	# Steam virtual controllers (28de:11ff) are recreated here with mode 0666.
+	for event_device in /dev/input/event*; do
+		[ -e "$event_device" ] || continue
+
+		event=${event_device##*/}
+		[[ "$event" =~ ^event[0-9]+$ ]] || continue
+		sys="/sys/class/input/$event/device"
+
+		vendor="$(cat "$sys/id/vendor" 2>/dev/null)" || continue
+		[ "$vendor" = "28de" ] || continue
+		product="$(cat "$sys/id/product" 2>/dev/null)" || continue
+		[ "$product" = "11ff" ] || continue
+
+		major_hex="$(stat -c '%t' -- "$event_device" 2>/dev/null)" || continue
+		minor_hex="$(stat -c '%T' -- "$event_device" 2>/dev/null)" || continue
+		[[ "$major_hex" =~ ^[[:xdigit:]]+$ && "$minor_hex" =~ ^[[:xdigit:]]+$ ]] || continue
+		major=$((16#$major_hex))
+		minor=$((16#$minor_hex))
+
+		waydroid shell -- sh -c \
+			"rm -f /dev/input/$event; mknod -m 666 /dev/input/$event c $major $minor" \
+			>/dev/null 2>&1 || true
+	done
+}
+
 # capture the existing kernel.pid_max value
 sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >"$PROFILE_HOME/orig_kernel.pid_max"
 
@@ -38,6 +72,7 @@ mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 "$WAYDROI
 
 # Steam Deck controller to work in Waydroid
 echo add | tee /sys/devices/virtual/input/input*/event*/uevent
+recreate_android_16_steam_input_nodes
 
 # disable initial device setup via ADB
 waydroid shell pm disable com.google.android.setupwizard

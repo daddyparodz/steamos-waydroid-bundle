@@ -63,8 +63,16 @@ waydroid)
 	[[ ! -f "$MOCK_STATE/ready-attempts" ]] || attempt="$(<"$MOCK_STATE/ready-attempts")"
 	attempt=$((attempt + 1))
 	printf '%s\n' "$attempt" >"$MOCK_STATE/ready-attempts"
-	[[ "$*" == *'pm path android'*'/storage/emulated/0'* ]] || exit 2
-	((attempt >= ${MOCK_READY_AFTER:-1}))
+	[[ "$*" == 'shell -- am get-started-user-state 0' ]] || exit 2
+	state="$(sed -n "${attempt}p" "$MOCK_STATE/user-states")"
+	if [[ -z "$state" ]]; then
+		state="$(tail -n 1 "$MOCK_STATE/user-states")"
+	fi
+	case "$state" in
+	__UNAVAILABLE__) exit 1 ;;
+	__EMPTY__) exit 0 ;;
+	*) printf '%s\n' "$state" ;;
+	esac
 	;;
 systemctl)
 	if [[ ${1:-} == is-active ]]; then
@@ -119,35 +127,77 @@ unmount_waydroid_share "$TEST_HOME"
 [[ "$(grep -c '^umount$' "$MOCK_STATE/counts")" == 1 ]] ||
 	fail 'already-unmounted shutdown was not idempotent'
 
+mount_count_before="$(grep -c '^mount$' "$MOCK_STATE/counts")"
+
+# Unavailable shell/state responses and all pre-unlock states must keep the
+# readiness gate closed and continue polling.
+for unavailable_state in __UNAVAILABLE__ __EMPTY__ BOOTING RUNNING_LOCKED; do
+	printf '%s\n' "$unavailable_state" RUNNING_UNLOCKED >"$MOCK_STATE/user-states"
+	rm -f -- "$MOCK_STATE/ready-attempts"
+	MOCK_CONTAINER_ACTIVE=true wait_for_waydroid_emulated_storage 10 0
+	[[ "$(<"$MOCK_STATE/ready-attempts")" == 2 ]] ||
+		fail "$unavailable_state did not keep polling until RUNNING_UNLOCKED"
+done
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == "$mount_count_before" ]] ||
+	fail 'a pre-unlock state performed a bind mount'
+
+# RUNNING_UNLOCKED is decisive even without the former package/path checks.
+printf 'RUNNING_UNLOCKED\n' >"$MOCK_STATE/user-states"
 rm -f -- "$MOCK_STATE/ready-attempts"
-export MOCK_READY_AFTER=3 MOCK_CONTAINER_ACTIVE=true
+export MOCK_CONTAINER_ACTIVE=true
+mount_waydroid_share_when_ready "$TEST_HOME" 10 0
+[[ "$(<"$MOCK_STATE/ready-attempts")" == 1 ]] ||
+	fail 'RUNNING_UNLOCKED did not immediately satisfy readiness'
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == $((mount_count_before + 1)) ]] ||
+	fail 'share was not mounted after user 0 reached RUNNING_UNLOCKED'
+unmount_waydroid_share "$TEST_HOME"
+
+printf '%s\n' BOOTING RUNNING_LOCKED RUNNING_UNLOCKED >"$MOCK_STATE/user-states"
+rm -f -- "$MOCK_STATE/ready-attempts"
 mount_waydroid_share_when_ready "$TEST_HOME" 10 0
 [[ "$(<"$MOCK_STATE/ready-attempts")" == 3 ]] ||
-	fail 'delayed emulated-storage readiness was not polled'
-[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == 2 ]] ||
-	fail 'share was not mounted after emulated storage became ready'
+	fail 'delayed RUNNING_UNLOCKED state was not polled'
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == $((mount_count_before + 2)) ]] ||
+	fail 'share was not mounted after delayed RUNNING_UNLOCKED state'
 
 # A second post-readiness setup must recognize the existing bind rather than
 # stacking another mount.
-MOCK_READY_AFTER=1 mount_waydroid_share_when_ready "$TEST_HOME" 10 0
-[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == 2 ]] ||
+printf 'RUNNING_UNLOCKED\n' >"$MOCK_STATE/user-states"
+mount_waydroid_share_when_ready "$TEST_HOME" 10 0
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == $((mount_count_before + 2)) ]] ||
 	fail 'post-readiness setup duplicated the existing bind mount'
 unmount_waydroid_share "$TEST_HOME"
 
+printf 'BOOTING\n' >"$MOCK_STATE/user-states"
 rm -f -- "$MOCK_STATE/ready-attempts"
-export MOCK_READY_AFTER=999
 if mount_waydroid_share_when_ready "$TEST_HOME" 0 0 \
 	2>"$TEST_ROOT/readiness-timeout.log"; then
-	fail 'emulated-storage readiness timeout unexpectedly succeeded'
+	fail 'RUNNING_UNLOCKED readiness timeout unexpectedly succeeded'
 else
 	readiness_status=$?
 fi
 [[ "$readiness_status" == 124 ]] ||
-	fail "emulated-storage readiness timeout returned $readiness_status instead of 124"
-grep -Fq '/storage/emulated/0 within 0 seconds' "$TEST_ROOT/readiness-timeout.log" ||
-	fail 'emulated-storage readiness timeout did not report the path and timeout'
-[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == 2 ]] ||
+	fail "RUNNING_UNLOCKED readiness timeout returned $readiness_status instead of 124"
+grep -Fq 'user 0 did not reach RUNNING_UNLOCKED within 0 seconds' \
+	"$TEST_ROOT/readiness-timeout.log" ||
+	fail 'readiness timeout did not report the required user state and timeout'
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == $((mount_count_before + 2)) ]] ||
 	fail 'readiness timeout performed a bind mount'
+
+rm -f -- "$MOCK_STATE/ready-attempts"
+if MOCK_CONTAINER_ACTIVE=false mount_waydroid_share_when_ready "$TEST_HOME" 10 0 \
+	2>"$TEST_ROOT/container-stopped.log"; then
+	fail 'readiness wait succeeded after the container stopped'
+else
+	readiness_status=$?
+fi
+[[ "$readiness_status" == 1 ]] ||
+	fail "stopped container returned $readiness_status instead of 1"
+grep -Fq 'container stopped before Android user 0 reached RUNNING_UNLOCKED' \
+	"$TEST_ROOT/container-stopped.log" ||
+	fail 'stopped-container failure did not report the interrupted readiness state'
+[[ "$(grep -c '^mount$' "$MOCK_STATE/counts")" == $((mount_count_before + 2)) ]] ||
+	fail 'stopped container performed a bind mount'
 
 if grep -Eq '(^|[[:space:]])mount_waydroid_share([[:space:]]|$)' \
 	"$REPO_ROOT/extras/scripts/waydroid-mount"; then

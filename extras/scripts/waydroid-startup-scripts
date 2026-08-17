@@ -20,9 +20,9 @@ sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >/home/deck/Androi
 # set the kernel.pid_max to 65535
 sudo sysctl -w kernel.pid_max=65535
 
-# Wait for Android itself and user 0's emulated-storage view. Binding before
-# this point leaves /data/media/0 populated but Android's /storage/emulated/0
-# view stale for the lifetime of the session.
+# Wait for Android user 0 to be fully running and unlocked. Binding before this
+# point leaves /data/media/0 populated but Android's /storage/emulated/0 view
+# stale for the lifetime of the session.
 mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 || exit $?
 
 # These are the commands to execute once Android boot and shared storage are ready.

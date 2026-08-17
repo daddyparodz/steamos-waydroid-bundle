@@ -80,20 +80,20 @@ wait_for_waydroid_emulated_storage() {
 
 	deadline=$((SECONDS + timeout_seconds))
 	while true; do
-		if timeout "$query_timeout_seconds" waydroid shell -- sh -c \
-			'pm path android 2>/dev/null | grep -q "^package:" && test -d /storage/emulated/0 && test -r /storage/emulated/0 && test -w /storage/emulated/0' \
-			>/dev/null 2>&1; then
+		if timeout "$query_timeout_seconds" waydroid shell -- \
+			am get-started-user-state 0 2>/dev/null |
+			grep -q '^RUNNING_UNLOCKED$'; then
 			return 0
 		fi
 
 		if ! systemctl is-active --quiet waydroid-container.service; then
-			printf 'error: Waydroid container stopped before Android user 0 emulated storage became ready\n' >&2
+			printf 'error: Waydroid container stopped before Android user 0 reached RUNNING_UNLOCKED\n' >&2
 			systemctl status --no-pager waydroid-container.service >&2 || true
 			return 1
 		fi
 
 		if ((SECONDS >= deadline)); then
-			printf 'error: Android user 0 emulated storage did not become ready at /storage/emulated/0 within %s seconds\n' \
+			printf 'error: Android user 0 did not reach RUNNING_UNLOCKED within %s seconds\n' \
 				"$timeout_seconds" >&2
 			return 124
 		fi

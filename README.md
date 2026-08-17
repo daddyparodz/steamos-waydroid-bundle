@@ -153,6 +153,7 @@ deployment, or follow the maintainer build procedure.
 | `./steamos-waydroid-installer.sh`                           | Fresh install when no image exists; otherwise automatic protected repair.                                                                           |
 | `./steamos-waydroid-installer.sh --repair`                  | Explicitly require the protected existing-image repair path.                                                                                        |
 | `./steamos-waydroid-installer.sh --reinstall-android`       | Deliberately create a new Android instance after typed confirmation. Existing image and user state are archived first.                              |
+| `./steamos-waydroid-installer.sh --install-test`             | Install a separate experimental Waydroid Test image and user state without modifying the normal Android environment.                                |
 | `./steamos-waydroid-installer.sh --configure-artifacts`     | Replace the Deck's bundle source through the advanced configuration wizard.                                                                         |
 | `./steamos-waydroid-installer.sh --uninstall`               | Remove host integration while retaining Android state, the checkout, installed bundles, and artifact configuration.                                 |
 | `./steamos-waydroid-installer.sh --purge-android`           | Delete Android state and reinstall archives while retaining the checkout and verified bundles.                                                      |
@@ -207,6 +208,13 @@ Mode, the launcher can also be run directly:
 cd ~/Android_Waydroid
 ./Android_Waydroid_Cage.sh
 ```
+
+After `--install-test` succeeds, Steam also contains a separate **Waydroid
+Test** entry. It uses `~/Android_Waydroid/test/waydroid.img` and
+`~/.local/share/waydroid-test/waydroid`; the normal Waydroid entry continues to
+use the existing image and user data. Both environments can remain installed,
+but they share `/var/lib/waydroid` and `waydroid-container.service`, so shut one
+down before launching or installing the other.
 
 Before every launch, the helper checks the current SteamOS fingerprint and
 reactivates an already-installed compatible bundle when possible. After a

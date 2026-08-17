@@ -204,12 +204,43 @@ validate_mounted_image() {
 		die "Android image has an empty waydroid.cfg"
 }
 
+validate_runtime_profile() {
+	local mounted_source backing_file selected_image
+
+	if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
+		mounted_source="$(findmnt -rn -o SOURCE --mountpoint "$WAYDROID_MOUNT")" ||
+			die "could not identify the image mounted at $WAYDROID_MOUNT"
+		[[ "$mounted_source" == /dev/loop* ]] ||
+			die "an unknown filesystem is mounted at $WAYDROID_MOUNT; shut down Waydroid first"
+		backing_file="$(losetup -n -O BACK-FILE -- "$mounted_source" 2>/dev/null | tail -n 1)"
+		[[ -n "$backing_file" ]] ||
+			die "could not identify the active Waydroid image; shut down Waydroid first"
+		selected_image="$(readlink -f -- "$IMAGE")"
+		backing_file="$(readlink -f -- "$backing_file")"
+		[[ "$backing_file" == "$selected_image" ]] ||
+			die "another Waydroid profile is active using $backing_file; shut it down before launching $WAYDROID_PROFILE"
+	elif systemctl is-active --quiet waydroid-container.service; then
+		die "Waydroid is active without an identifiable profile mount; shut it down first"
+	fi
+}
+
 waydroid_mount_main() {
-	resolve_waydroid_profile "$@" || exit $?
+	local requested_profile="${1:-main}"
+	local operation="${2:-mount}"
+
+	if (($# > 2)) || [[ "$operation" != mount && "$operation" != --check-only ]]; then
+		die "usage: $0 [main|test] [--check-only]"
+	fi
+	resolve_waydroid_profile "$requested_profile" || exit $?
 	IMAGE=$WAYDROID_IMAGE
 
-	validate_binder
 	validate_image
+	validate_runtime_profile
+	if [[ "$operation" == --check-only ]]; then
+		printf 'Waydroid profile %s is available.\n' "$WAYDROID_PROFILE"
+		return 0
+	fi
+	validate_binder
 
 	systemctl stop waydroid-container.service 2>/dev/null || true
 	if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then

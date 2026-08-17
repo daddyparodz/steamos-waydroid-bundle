@@ -43,6 +43,7 @@ while true; do
 		FALSE SERVICE "Start or Stop the Waydroid container service." \
 		FALSE GPU "Change the GPU config - GBM or MINIGBM." \
 		FALSE LAUNCHER "Add Android Waydroid Cage launcher to Game Mode." \
+		FALSE TEST_ENV "Install a separate experimental Waydroid Test Android environment." \
 		FALSE NETWORK "Reinitialize firewall configuration - use this when WIFI is not working." \
 		FALSE UNINSTALL "Choose this to uninstall Waydroid and revert any changes made." \
 		TRUE EXIT "***** Exit the Waydroid Toolbox *****")
@@ -50,6 +51,44 @@ while true; do
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo User pressed CANCEL / EXIT.
 		exit
+
+	elif [ "$Choice" == "TEST_ENV" ]; then
+		profile_lib=/usr/lib/steamos-waydroid/waydroid-profile.sh
+		if [ ! -r "$profile_lib" ]; then
+			zenity --error --title "Waydroid Toolbox" \
+				--text "The Waydroid profile helper is missing. Run the normal installer repair first."
+			continue
+		fi
+		# shellcheck source=../../libexec/steamos-waydroid/waydroid-profile.sh
+		source "$profile_lib"
+		if ! resolve_waydroid_profile test; then
+			zenity --error --title "Waydroid Toolbox" \
+				--text "The Waydroid Test paths could not be resolved safely."
+			continue
+		fi
+		if [ -f "$WAYDROID_IMAGE" ]; then
+			zenity --info --title "Waydroid Toolbox" \
+				--text "Waydroid Test is already installed."
+			continue
+		fi
+		if ! installer_path="$(find_waydroid_installer)"; then
+			zenity --error --title "Waydroid Toolbox" \
+				--text "The installer checkout could not be found; Waydroid Test was not installed."
+			continue
+		fi
+		if ! zenity --question --title "Install Waydroid Test" --width 650 --height 140 \
+			--text "Install an additional experimental Android environment?\n\nThe normal Waydroid image and applications will remain unchanged. Only one environment can run at a time."; then
+			continue
+		fi
+		if [ -t 0 ] && [ -t 1 ]; then
+			exec "$installer_path" --install-test
+		elif command -v konsole >/dev/null 2>&1; then
+			konsole --hold -e "$installer_path" --install-test &
+			exit 0
+		else
+			zenity --error --title "Install Waydroid Test" --width 650 --height 120 \
+				--text "Konsole is unavailable. Open a terminal and run:\n\n$installer_path --install-test"
+		fi
 
 	elif [ "$Choice" == "NETWORK" ]; then
 		if ! installer_path="$(find_waydroid_installer)"; then

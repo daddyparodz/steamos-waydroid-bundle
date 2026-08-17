@@ -148,6 +148,18 @@ Run the SteamOS Waydroid installer in Desktop Mode to repair the reported proble
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 
+# Check profile ownership before stopping any existing user session. This
+# prevents a test launch from disrupting a running main environment (and vice
+# versa). waydroid-mount repeats the check immediately before mounting.
+if ! PROFILE_CHECK_OUTPUT=$(sudo /usr/bin/waydroid-mount "$WAYDROID_PROFILE" --check-only 2>&1); then
+	kdialog --error "Waydroid cannot switch profiles while another environment is active.
+
+$PROFILE_CHECK_OUTPUT
+
+Shut down Waydroid, then try again."
+	exit 1
+fi
+
 # A running Waydroid session remains bound to the Wayland compositor that
 # started it. Stop it gracefully before waydroid-mount stops the container, so
 # the session started below will bind to Cage instead of returning immediately

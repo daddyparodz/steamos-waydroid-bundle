@@ -84,7 +84,9 @@ run_mount_case() (
 	validate_binder() { :; }
 	validate_image() { :; }
 	validate_mounted_image() { :; }
-	systemctl() { :; }
+	systemctl() {
+		[[ ${1:-} != is-active ]]
+	}
 	findmnt() { return 1; }
 	umount() { :; }
 	mkdir() { :; }
@@ -131,6 +133,32 @@ if (
 fi
 grep -Fq "Android image is missing or is not a regular file: $TEST_HOME/Android_Waydroid/test/waydroid.img" \
 	"$TEST_ROOT/missing-test-image.log" || fail 'missing test image failure was unclear'
+
+mkdir -p "$TEST_HOME/Android_Waydroid/test"
+: >"$TEST_HOME/Android_Waydroid/waydroid.img"
+: >"$TEST_HOME/Android_Waydroid/test/waydroid.img"
+if (
+	export HOME=$TEST_HOME
+	# shellcheck source=../extras/scripts/waydroid-mount
+	source "$REPO_ROOT/extras/scripts/waydroid-mount"
+	resolve_waydroid_profile test
+	IMAGE=$WAYDROID_IMAGE
+	findmnt() {
+		if [[ ${3:-} == SOURCE ]]; then
+			printf '/dev/loop7\n'
+		else
+			return 0
+		fi
+	}
+	losetup() {
+		printf '%s\n' "$TEST_HOME/Android_Waydroid/waydroid.img"
+	}
+	validate_runtime_profile
+) 2>"$TEST_ROOT/profile-conflict.log"; then
+	fail 'test profile accepted an active main image'
+fi
+grep -Fq 'another Waydroid profile is active' "$TEST_ROOT/profile-conflict.log" ||
+	fail 'active profile conflict was unclear'
 
 run_shutdown_case() (
 	local profile=$1

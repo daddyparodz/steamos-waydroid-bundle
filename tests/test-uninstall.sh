@@ -229,6 +229,20 @@ test_success_removes_explicit_packages_separately() {
 	assert_log 'stage=reset complete' "$(latest_reset_log)" || return 1
 }
 
+test_separate_test_environment_is_preserved() {
+	setup_case test-environment-preserved
+	mkdir -p \
+		"$CASE_HOME/Android_Waydroid/test" \
+		"$CASE_HOME/.local/share/waydroid-test/waydroid"
+	printf 'test image\n' >"$CASE_HOME/Android_Waydroid/test/waydroid.img"
+	printf 'test user data\n' \
+		>"$CASE_HOME/.local/share/waydroid-test/waydroid/test-data"
+	run_uninstall success
+	[[ $RUN_STATUS -eq 0 ]] || return 1
+	assert_file "$CASE_HOME/Android_Waydroid/test/waydroid.img" || return 1
+	assert_file "$CASE_HOME/.local/share/waydroid-test/waydroid/test-data" || return 1
+}
+
 test_shared_folder_is_unmounted_and_preserved() {
 	setup_case shared-folder-preserved
 	run_uninstall share_mounted
@@ -444,6 +458,7 @@ tests=(
 	test_existing_staging_is_recovered
 	test_ambiguous_staging_is_refused
 	test_success_removes_explicit_packages_separately
+	test_separate_test_environment_is_preserved
 	test_shared_folder_is_unmounted_and_preserved
 	test_firewall_active_targeted_cleanup
 	test_firewall_inactive_offline_cleanup

@@ -12,6 +12,9 @@ resolve_waydroid_profile main || exit $?
 ANDROID_HOME=${WAYDROID_IMAGE%/*}
 ANDROID_IMAGE=$WAYDROID_IMAGE
 WAYDROID_SHARE_TARGET="$WAYDROID_DATA/media/0/Waydroid Share"
+resolve_waydroid_profile test || exit $?
+WAYDROID_TEST_HOME=${WAYDROID_IMAGE%/*}
+resolve_waydroid_profile main || exit $?
 WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid"
 PRESERVATION_CANDIDATE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid-preserved-reset"
@@ -297,6 +300,7 @@ This permanently deletes this installer's Waydroid instance, including:
 By default it intentionally keeps:
   - this Git checkout
   - ~/.local/opt/steamos-waydroid (the verified target-built bundles)
+  - a separately installed Waydroid Test image and user data
 
 These retained prerequisites are required to run the installer again.
 EOF
@@ -593,9 +597,18 @@ rm -f -- \
 	"$PROJECT_ROOT/extras/waydroid.img" \
 	"$PROJECT_ROOT/logfile"
 # Waydroid and its privileged helpers can leave root-owned files below these
-# user directories. Keep the targets explicit, but remove them as root.
-sudo rm -rf -- \
-	"$ANDROID_HOME"
+# user directories. Remove main integration and image files while explicitly
+# preserving the separately managed test directory.
+if [[ "$WAYDROID_TEST_HOME" != "$ANDROID_HOME/test" ]]; then
+	printf 'error: unsafe Waydroid Test directory resolution: %s\n' \
+		"$WAYDROID_TEST_HOME" >&2
+	exit 1
+fi
+if [[ -d "$ANDROID_HOME" ]]; then
+	sudo find "$ANDROID_HOME" -mindepth 1 -maxdepth 1 \
+		! -path "$WAYDROID_TEST_HOME" -exec rm -rf -- {} +
+	sudo rmdir "$ANDROID_HOME" 2>/dev/null || true
+fi
 if [[ "$KEEP_ANDROID_STATE" != true ]]; then
 	sudo rm -rf -- \
 		"$WAYDROID_LEGACY_USER_STATE" \

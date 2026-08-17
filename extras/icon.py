@@ -17,6 +17,10 @@ TARGETS = {
         "name": "Waydroid",
         "executables": ("Android_Waydroid_Cage.sh",),
     },
+    "waydroid-test": {
+        "name": "Waydroid Test",
+        "executables": ("Android_Waydroid_Test_Cage.sh",),
+    },
     "nested-desktop": {
         "name": "steamos-nested-desktop",
         "executables": ("/usr/bin/steamos-nested-desktop", "steamos-nested-desktop"),

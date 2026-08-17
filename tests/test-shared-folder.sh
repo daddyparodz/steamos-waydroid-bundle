@@ -216,7 +216,7 @@ grep -Fq 'mount_waydroid_share_when_ready "$USER_HOME"' \
 ensure_line="$(grep -nF 'ensure_waydroid_share_source "$HOME"' \
 	"$REPO_ROOT/extras/scripts/Android_Waydroid_Cage.sh" | cut -d: -f1)"
 mount_phase_line="$(grep -nF 'sudo /usr/bin/waydroid-mount' \
-	"$REPO_ROOT/extras/scripts/Android_Waydroid_Cage.sh" | cut -d: -f1)"
+	"$REPO_ROOT/extras/scripts/Android_Waydroid_Cage.sh" | tail -n 1 | cut -d: -f1)"
 [[ -n "$ensure_line" && -n "$mount_phase_line" && "$ensure_line" -lt "$mount_phase_line" ]] ||
 	fail 'launcher does not ensure the host share before the persistent-storage mount phase'
 

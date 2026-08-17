@@ -72,3 +72,4 @@ jobs:
           tests/test-bundle-compatibility.sh
           tests/test-shared-folder.sh
           tests/test-waydroid-profiles.sh
+          tests/test-test-environment.sh

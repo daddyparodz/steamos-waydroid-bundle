@@ -96,6 +96,8 @@ WAYDROID_LEGACY_USER_STATE=$HOME/waydroid
 FIREWALL_OWNERSHIP_FILE=$HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env
 # shellcheck source=libexec/steamos-waydroid/installer-functions.sh
 source "$DECK_RUNTIME/installer-functions.sh"
+# shellcheck source=libexec/steamos-waydroid/android-image-sources.sh
+source "$DECK_RUNTIME/android-image-sources.sh"
 # shellcheck source=libexec/steamos-waydroid/installer-sanity-checks.sh
 source "$DECK_RUNTIME/installer-sanity-checks.sh"
 # shellcheck source=libexec/steamos-waydroid/firewall-rules.sh
@@ -794,16 +796,32 @@ echo -e "$current_password\n" | sudo -S cp extras/fixes/audio.rc /var/lib/waydro
 echo -e "$current_password\n" | sudo -S wget https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts \
 	-O /var/lib/waydroid/overlay/system/etc/hosts
 
-Android_Choice=$(zenity --width 1040 --height 320 --list --radiolist --multiple \
-	--title "SteamOS Waydroid Bundle  - https://github.com/pjohno/steamos-waydroid-bundle" \
-	--column "Select One" \
-	--column "Option" \
-	--column="Description - Read this carefully!" \
-	TRUE A13_GAPPS "Download official Android 13 image with Google Play Store." \
-	FALSE A13_NO_GAPPS "Download official Android 13 image without Google Play Store." \
-	FALSE TV13_GAPPS "Download unofficial Android 13 TV image with Google Play Store - thanks SupeChicken666 for the image!" \
-	FALSE TV13_NO_GAPPS "Download unofficial Android 13 TV image without Google Play Store - thanks SupeChicken666 for the image!" \
-	FALSE EXIT "***** Exit this script *****")
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	Android_Choice=$(zenity --width 1040 --height 400 --list --radiolist \
+		--title "Install Waydroid Test - choose one Android image" \
+		--column "Select One" \
+		--column "ID" \
+		--column "Option" \
+		--column "Description" \
+		--hide-column=2 --print-column=2 \
+		TRUE A13_GAPPS "Android 13 — GApps" "Stable / standard Waydroid image" \
+		FALSE A13_NO_GAPPS "Android 13 — Vanilla" "Stable / standard Waydroid image" \
+		FALSE A15_NO_GAPPS "Android 15 — Vanilla (Experimental)" "Newer Android platform / app compatibility" \
+		FALSE A16_GAPPS "Android 16 — GApps (Experimental)" "Latest test platform" \
+		FALSE A16_NO_GAPPS "Android 16 — Vanilla (Experimental)" "Latest test platform" \
+		FALSE EXIT "Exit" "Exit this installer")
+else
+	Android_Choice=$(zenity --width 1040 --height 320 --list --radiolist --multiple \
+		--title "SteamOS Waydroid Bundle  - https://github.com/pjohno/steamos-waydroid-bundle" \
+		--column "Select One" \
+		--column "Option" \
+		--column="Description - Read this carefully!" \
+		TRUE A13_GAPPS "Download official Android 13 image with Google Play Store." \
+		FALSE A13_NO_GAPPS "Download official Android 13 image without Google Play Store." \
+		FALSE TV13_GAPPS "Download unofficial Android 13 TV image with Google Play Store - thanks SupeChicken666 for the image!" \
+		FALSE TV13_NO_GAPPS "Download unofficial Android 13 TV image without Google Play Store - thanks SupeChicken666 for the image!" \
+		FALSE EXIT "***** Exit this script *****")
+fi
 
 if [ $? -eq 1 ] || [ "$Android_Choice" == "EXIT" ]; then
 	echo User pressed CANCEL / EXIT. Goodbye!
@@ -812,7 +830,10 @@ if [ $? -eq 1 ] || [ "$Android_Choice" == "EXIT" ]; then
 		exit 1
 	fi
 	cleanup_exit
+fi
 
+if ! set_android_image_selection "$Android_Choice"; then
+	abort_run
 elif [ "$Android_Choice" == "A13_GAPPS" ]; then
 	echo Initializing Waydroid.
 	echo -e "$current_password\n" | run_profile_sudo waydroid init -s GAPPS
@@ -832,6 +853,12 @@ elif [ "$Android_Choice" == "TV13_NO_GAPPS" ]; then
 	echo Initializing Waydroid.
 	echo -e "$current_password\n" | run_profile_sudo waydroid init -c ${ANDROID13_TV_OTA}/system -v ${ANDROID13_TV_OTA}/vendor
 	check_waydroid_init
+
+elif [ "$ANDROID_VERSION" == 15 ] || [ "$ANDROID_VERSION" == 16 ]; then
+	if ! install_experimental_android_image; then
+		echo "Android $ANDROID_VERSION $ANDROID_VARIANT installation failed; no fallback image was installed." >&2
+		abort_run
+	fi
 fi
 
 # run casualsnek / aleasto waydroid_script
@@ -839,6 +866,10 @@ echo Install $ARM_Choice widevine and fingerprint spoof.
 if [ "$Android_Choice" == "TV13_GAPPS" ] || [ "$Android_Choice" == "TV13_NO_GAPPS" ]; then
 	echo No need for casualsnek / aleasto waydroid_script for TV13 images.
 	echo TV13 images already contains libhoudini arm translation layer and widevine.
+elif [ "$ANDROID_VERSION" == 15 ] || [ "$ANDROID_VERSION" == 16 ]; then
+	echo "Skipping the Android-13-specific waydroid_script ARM/Widevine modification for Android $ANDROID_VERSION."
+	echo "The experimental image's built-in ARM support is retained; Widevine is not modified."
+	rm -rf -- "$WAYDROID_SCRIPT_DIR"
 else
 	if ! install_android_extras; then
 		echo "Android extras installation failed; the incomplete installation will be cleaned up." >&2
@@ -866,6 +897,10 @@ if ! commit_new_android_image extras/waydroid.img; then
 fi
 ANDROID_REINSTALL_COMMITTED=true
 if [ "$TEST_INSTALL_MODE" = true ]; then
+	if ! record_test_android_metadata; then
+		echo Failed to record the Waydroid Test Android version metadata. >&2
+		abort_run
+	fi
 	TEST_INSTALL_COMMITTED=true
 	echo Waydroid Test has been successfully installed without modifying the normal Android environment.
 fi

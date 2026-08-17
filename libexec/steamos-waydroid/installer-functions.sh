@@ -602,23 +602,26 @@ cleanup_exit() {
 	exit 1
 }
 
-# apply custom config for controller detection, root and fingerprint spoof
+# Apply the version-independent controller/root properties, then only the
+# fingerprint spoof which is known to match the selected Android 13 image.
 apply_android_custom_config() {
 
 	# waydroid_base.prop - controller config and disable root
 	echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 	cat extras/props/waydroid_base.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 
-	# waydroid_base.prop fingerprint spoof - check if A11 or A13 and apply the spoof accordingly
+	# waydroid_base.prop fingerprint spoof
 	# shellcheck disable=SC2154
 	if [ "$Android_Choice" == "A13_NO_GAPPS" ] || [ "$Android_Choice" == "A13_GAPPS" ]; then
 		echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 		cat extras/props/android_spoof.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
-	else
-		[ "$Android_Choice" == "TV13_NO_GAPPS" ] || [ "$Android_Choice" == "TV13_GAPPS" ]
+	elif [ "$Android_Choice" == "TV13_NO_GAPPS" ] || [ "$Android_Choice" == "TV13_GAPPS" ]; then
 		echo TV13.
 		echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 		cat extras/props/androidtv_spoof.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop
+	else
+		printf 'Skipping the Android-13-specific fingerprint spoof for Android %s.\n' \
+			"${ANDROID_VERSION:-unknown}"
 	fi
 }
 

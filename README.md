@@ -105,10 +105,28 @@ For a new Android instance, the installer offers:
 - Android TV 13 with Google Play;
 - Android TV 13 without Google Play.
 
-The standard Android images use `waydroid_script` to install libhoudini ARM
-translation, Widevine, and fingerprint configuration. The TV images are
-provided separately and already contain their required ARM translation and
-Widevine components.
+Those normal-install choices remain on Android 13. The separate **Install Test
+Environment** flow offers the same official Android 13 GApps and Vanilla
+choices plus experimental regular (non-TV) x86_64 images:
+
+- Android 15 Vanilla (Experimental);
+- Android 16 GApps (Experimental);
+- Android 16 Vanilla (Experimental).
+
+The current Android 15 release does not include a GApps image artifact, so the
+installer does not advertise that unavailable variant. The experimental
+Android 15/16 images are provided by the independent
+[SupeChicken / WayDroid-ATV project](https://sourceforge.net/projects/waydroid-atv/files/images/);
+they are not produced or officially supported by this repository. Their exact,
+pinned SourceForge artifacts are centralized in
+`libexec/steamos-waydroid/android-image-sources.sh`.
+
+The official Android 13 standard images use `waydroid_script` to install
+libhoudini ARM translation, Widevine, and fingerprint configuration. The TV
+images are provided separately and already contain their required ARM
+translation and Widevine components. The Android-13-specific extras and
+fingerprint spoof are deliberately skipped for experimental Android 15/16;
+their built-in ARM support is retained and Widevine is not modified.
 
 The fresh-install path also downloads the
 [StevenBlack hosts list](https://github.com/StevenBlack/hosts) variant that
@@ -215,6 +233,11 @@ Test** entry. It uses `~/Android_Waydroid/test/waydroid.img` and
 use the existing image and user data. Both environments can remain installed,
 but they share `/var/lib/waydroid` and `waydroid-container.service`, so shut one
 down before launching or installing the other.
+
+The test slot contains one Android installation at a time. Its selected version
+and variant are recorded in `~/Android_Waydroid/test/android-version` and
+`~/Android_Waydroid/test/android-variant` for diagnostics. Recreate the test
+environment to switch versions; there is no automatic fallback or migration.
 
 Before every launch, the helper checks the current SteamOS fingerprint and
 reactivates an already-installed compatible bundle when possible. After a

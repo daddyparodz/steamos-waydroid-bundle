@@ -3,26 +3,10 @@
 # Shared-folder lifecycle helpers shared by the unprivileged installer/launcher
 # and the privileged startup/shutdown scripts.
 
-waydroid_user_home() {
-	local user_name="${SUDO_USER:-deck}"
-	local passwd_entry user_home
-
-	[[ -n "$user_name" && "$user_name" != root ]] || {
-		printf 'error: could not identify the normal SteamOS user for the Waydroid shared folder\n' >&2
-		return 1
-	}
-	passwd_entry="$(getent passwd "$user_name" 2>/dev/null)" || {
-		printf 'error: could not resolve the home directory for SteamOS user %s\n' "$user_name" >&2
-		return 1
-	}
-	user_home="$(cut -d: -f6 <<<"$passwd_entry")"
-	[[ "$user_home" == /* && "$user_home" != /root ]] || {
-		printf 'error: unsafe home directory for SteamOS user %s: %s\n' \
-			"$user_name" "${user_home:-missing}" >&2
-		return 1
-	}
-	printf '%s\n' "$user_home"
-}
+_waydroid_shared_folder_lib_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=waydroid-profile.sh
+source "$_waydroid_shared_folder_lib_dir/waydroid-profile.sh"
+unset _waydroid_shared_folder_lib_dir
 
 ensure_waydroid_share_source() {
 	local user_home="$1"
@@ -104,8 +88,12 @@ wait_for_waydroid_emulated_storage() {
 
 mount_waydroid_share() {
 	local user_home="$1"
+	local profile="${2:-main}"
 	local share_source="$user_home/Waydroid Share"
-	local share_target="$user_home/.local/share/waydroid/data/media/0/Waydroid Share"
+	local share_target
+
+	resolve_waydroid_profile "$profile" || return
+	share_target="$WAYDROID_DATA/media/0/Waydroid Share"
 
 	[[ -d "$share_source" && ! -L "$share_source" ]] || {
 		printf 'error: Waydroid shared folder is missing: %s\n' "$share_source" >&2
@@ -148,14 +136,19 @@ mount_waydroid_share_when_ready() {
 	local user_home="$1"
 	local timeout_seconds="${2:-90}"
 	local poll_seconds="${3:-2}"
+	local profile="${4:-main}"
 
 	wait_for_waydroid_emulated_storage "$timeout_seconds" "$poll_seconds" || return
-	mount_waydroid_share "$user_home"
+	mount_waydroid_share "$user_home" "$profile"
 }
 
 unmount_waydroid_share() {
 	local user_home="$1"
-	local share_target="$user_home/.local/share/waydroid/data/media/0/Waydroid Share"
+	local profile="${2:-main}"
+	local share_target
+
+	resolve_waydroid_profile "$profile" || return
+	share_target="$WAYDROID_DATA/media/0/Waydroid Share"
 
 	if ! findmnt --mountpoint "$share_target" >/dev/null 2>&1; then
 		return 0

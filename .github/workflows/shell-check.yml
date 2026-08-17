@@ -71,3 +71,4 @@ jobs:
           tests/test-package-transaction.sh
           tests/test-bundle-compatibility.sh
           tests/test-shared-folder.sh
+          tests/test-waydroid-profiles.sh

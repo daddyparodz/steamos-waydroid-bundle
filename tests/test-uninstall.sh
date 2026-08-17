@@ -59,6 +59,8 @@ setup_case() {
 		"$CASE_REPO/libexec/steamos-waydroid/uninstall.sh"
 	cp "$REPO_ROOT/libexec/steamos-waydroid/firewall-rules.sh" \
 		"$CASE_REPO/libexec/steamos-waydroid/firewall-rules.sh"
+	cp "$REPO_ROOT/libexec/steamos-waydroid/waydroid-profile.sh" \
+		"$CASE_REPO/libexec/steamos-waydroid/waydroid-profile.sh"
 	printf '#!/usr/bin/env python3\n' >"$CASE_REPO/extras/icon.py"
 	chmod +x "$CASE_REPO/libexec/steamos-waydroid/uninstall.sh"
 	: >"$MOCK_LOG"

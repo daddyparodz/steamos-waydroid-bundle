@@ -5,10 +5,13 @@ IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
-ANDROID_HOME="$HOME/Android_Waydroid"
-ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
-WAYDROID_USER_STATE="$HOME/.local/share/waydroid"
-WAYDROID_SHARE_TARGET="$WAYDROID_USER_STATE/data/media/0/Waydroid Share"
+# Uninstall remains scoped to the existing main installation in stage 1.
+# shellcheck source=waydroid-profile.sh
+source "$SCRIPT_DIR/waydroid-profile.sh"
+resolve_waydroid_profile main || exit $?
+ANDROID_HOME=${WAYDROID_IMAGE%/*}
+ANDROID_IMAGE=$WAYDROID_IMAGE
+WAYDROID_SHARE_TARGET="$WAYDROID_DATA/media/0/Waydroid Share"
 WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid"
 PRESERVATION_CANDIDATE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid-preserved-reset"

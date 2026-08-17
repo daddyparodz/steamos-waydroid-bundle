@@ -54,7 +54,7 @@ Existing Android state was found:
 EOF
 	for existing_path in \
 		"$WAYDROID_IMAGE" \
-		"$HOME/.local/share/waydroid" \
+		"$WAYDROID_USER_STATE" \
 		"$HOME/waydroid"; do
 		if [ -e "$existing_path" ] || [ -L "$existing_path" ]; then
 			printf '  %s\n' "$existing_path"
@@ -240,10 +240,10 @@ archive_existing_android_state() {
 	# shellcheck disable=SC2034
 	ANDROID_REINSTALL_TIMESTAMP=$timestamp
 	ARCHIVED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.pre-reinstall-$timestamp"
-	ARCHIVED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.pre-reinstall-$timestamp"
+	ARCHIVED_ANDROID_USER_STATE="$WAYDROID_USER_STATE.pre-reinstall-$timestamp"
 	ARCHIVED_ANDROID_LEGACY_USER_STATE="$HOME/waydroid.pre-reinstall-$timestamp"
 	FAILED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.failed-reinstall-$timestamp"
-	FAILED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.failed-reinstall-$timestamp"
+	FAILED_ANDROID_USER_STATE="$WAYDROID_USER_STATE.failed-reinstall-$timestamp"
 	FAILED_ANDROID_LEGACY_USER_STATE="$HOME/waydroid.failed-reinstall-$timestamp"
 
 	for archive_path in \
@@ -264,11 +264,11 @@ archive_existing_android_state() {
 			return 1
 		fi
 	fi
-	for source_path in "$HOME/.local/share/waydroid" "$HOME/waydroid"; do
+	for source_path in "$WAYDROID_USER_STATE" "$HOME/waydroid"; do
 		if [ ! -e "$source_path" ] && [ ! -L "$source_path" ]; then
 			continue
 		fi
-		if [ "$source_path" = "$HOME/.local/share/waydroid" ]; then
+		if [ "$source_path" = "$WAYDROID_USER_STATE" ]; then
 			archive_path=$ARCHIVED_ANDROID_USER_STATE
 		else
 			archive_path=$ARCHIVED_ANDROID_LEGACY_USER_STATE
@@ -317,8 +317,8 @@ restore_archived_android_state_after_failure() {
 			sudo mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || restore_failed=true
 		fi
 		if { [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]; } &&
-			[ ! -e "$HOME/.local/share/waydroid" ] && [ ! -L "$HOME/.local/share/waydroid" ]; then
-			sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$HOME/.local/share/waydroid" || restore_failed=true
+			[ ! -e "$WAYDROID_USER_STATE" ] && [ ! -L "$WAYDROID_USER_STATE" ]; then
+			sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$WAYDROID_USER_STATE" || restore_failed=true
 		fi
 		if { [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]; } &&
 			[ ! -e "$HOME/waydroid" ] && [ ! -L "$HOME/waydroid" ]; then
@@ -351,7 +351,7 @@ restore_archived_android_state_after_failure() {
 	if ! move_failed_android_state_aside "$WAYDROID_IMAGE" "$FAILED_ANDROID_IMAGE"; then
 		restore_failed=true
 	fi
-	if ! move_failed_android_state_aside "$HOME/.local/share/waydroid" "$FAILED_ANDROID_USER_STATE"; then
+	if ! move_failed_android_state_aside "$WAYDROID_USER_STATE" "$FAILED_ANDROID_USER_STATE"; then
 		restore_failed=true
 	fi
 	if ! move_failed_android_state_aside "$HOME/waydroid" "$FAILED_ANDROID_LEGACY_USER_STATE"; then
@@ -362,12 +362,12 @@ restore_archived_android_state_after_failure() {
 		return 1
 	fi
 
-	mkdir -p -- "$ANDROID_HOME" "$HOME/.local/share"
+	mkdir -p -- "$ANDROID_HOME" "${WAYDROID_USER_STATE%/*}"
 	if [ -f "$ARCHIVED_ANDROID_IMAGE" ]; then
 		sudo mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || restore_failed=true
 	fi
 	if [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]; then
-		sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$HOME/.local/share/waydroid" || restore_failed=true
+		sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$WAYDROID_USER_STATE" || restore_failed=true
 	fi
 	if [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]; then
 		sudo mv -- "$ARCHIVED_ANDROID_LEGACY_USER_STATE" "$HOME/waydroid" || restore_failed=true

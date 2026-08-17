@@ -93,6 +93,7 @@ for command_name in getent findmnt mount umount stat waydroid systemctl sleep; d
 done
 
 export PATH="$MOCK_BIN:/usr/bin:/bin"
+export HOME="$TEST_HOME"
 export TEST_HOME MOCK_STATE MOCK_LOG
 # shellcheck source=../libexec/steamos-waydroid/shared-folder.sh
 source "$REPO_ROOT/libexec/steamos-waydroid/shared-folder.sh"
@@ -126,6 +127,12 @@ unmount_waydroid_share "$TEST_HOME"
 unmount_waydroid_share "$TEST_HOME"
 [[ "$(grep -c '^umount$' "$MOCK_STATE/counts")" == 1 ]] ||
 	fail 'already-unmounted shutdown was not idempotent'
+
+TEST_SHARE_TARGET="$TEST_HOME/.local/share/waydroid-test/waydroid/data/media/0/Waydroid Share"
+mount_waydroid_share "$TEST_HOME" test
+[[ "$(<"$MOCK_STATE/target")" == "$TEST_SHARE_TARGET" ]] ||
+	fail 'test profile did not use its Android-side shared-folder target'
+unmount_waydroid_share "$TEST_HOME" test
 
 mount_count_before="$(grep -c '^mount$' "$MOCK_STATE/counts")"
 

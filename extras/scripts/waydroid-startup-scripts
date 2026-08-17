@@ -2,7 +2,12 @@
 
 BOOT_TIMEOUT_SECONDS=90
 
-SHARED_FOLDER_LIB="${STEAMOS_WAYDROID_SHARED_FOLDER_LIB:-/usr/lib/steamos-waydroid/shared-folder.sh}"
+SHARED_FOLDER_LIB=/usr/lib/steamos-waydroid/shared-folder.sh
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -r "$SHARED_FOLDER_LIB" ] &&
+	[ -r "$SCRIPT_DIR/../../libexec/steamos-waydroid/shared-folder.sh" ]; then
+	SHARED_FOLDER_LIB="$SCRIPT_DIR/../../libexec/steamos-waydroid/shared-folder.sh"
+fi
 if [ -r "$SHARED_FOLDER_LIB" ]; then
 	# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
 	source "$SHARED_FOLDER_LIB"
@@ -14,8 +19,12 @@ else
 	exit 1
 fi
 
+resolve_waydroid_profile "$@" || exit $?
+export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
+PROFILE_HOME=${WAYDROID_IMAGE%/*}
+
 # capture the existing kernel.pid_max value
-sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >/home/deck/Android_Waydroid/orig_kernel.pid_max
+sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >"$PROFILE_HOME/orig_kernel.pid_max"
 
 # set the kernel.pid_max to 65535
 sudo sysctl -w kernel.pid_max=65535
@@ -23,7 +32,7 @@ sudo sysctl -w kernel.pid_max=65535
 # Wait for Android user 0 to be fully running and unlocked. Binding before this
 # point leaves /data/media/0 populated but Android's /storage/emulated/0 view
 # stale for the lifetime of the session.
-mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 || exit $?
+mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 "$WAYDROID_PROFILE" || exit $?
 
 # These are the commands to execute once Android boot and shared storage are ready.
 
@@ -64,8 +73,8 @@ chmod 777 -R /data/media/0/Android/obb
 chmod 777 -R /data/media/0/Android/data"
 
 # Xbox Wireless Controller spoofing for CoD Mobile to work without 3rd party controller mapping (mantis etc)
-if [ -f /home/deck/Android_Waydroid/spoofing/classes.dex ]; then
-	cp /home/deck/Android_Waydroid/spoofing/classes.dex /var/lib/waydroid/overlay/system/bin/classes.dex
+if [ -f "$PROFILE_HOME/spoofing/classes.dex" ]; then
+	cp "$PROFILE_HOME/spoofing/classes.dex" /var/lib/waydroid/overlay/system/bin/classes.dex
 	waydroid shell -- sh -c "export CLASSPATH=/system/bin/classes.dex ; app_process / com.android.commands.hid.Hid" &
 
 else

@@ -78,9 +78,11 @@ WORKING_DIR=$SCRIPT_DIR
 DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
 DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
 ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
-ANDROID_HOME=$HOME/Android_Waydroid
-WAYDROID_IMAGE=$ANDROID_HOME/waydroid.img
-WAYDROID_USER_STATE=$HOME/.local/share/waydroid
+# The stage-1 installer remains intentionally pinned to the existing profile.
+# shellcheck source=libexec/steamos-waydroid/waydroid-profile.sh
+source "$DECK_RUNTIME/waydroid-profile.sh"
+resolve_waydroid_profile main || exit $?
+ANDROID_HOME=${WAYDROID_IMAGE%/*}
 WAYDROID_LEGACY_USER_STATE=$HOME/waydroid
 FIREWALL_OWNERSHIP_FILE=$HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env
 # shellcheck source=libexec/steamos-waydroid/installer-functions.sh
@@ -548,7 +550,9 @@ echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-mount /usr/bi
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-firewall /usr/bin/waydroid-firewall
 echo -e "$current_password\n" | sudo -S mkdir -p /usr/lib/steamos-waydroid
 echo -e "$current_password\n" | sudo -S cp \
-	libexec/steamos-waydroid/shared-folder.sh /usr/lib/steamos-waydroid/shared-folder.sh
+	libexec/steamos-waydroid/shared-folder.sh \
+	libexec/steamos-waydroid/waydroid-profile.sh \
+	/usr/lib/steamos-waydroid/
 echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
 
 # custom sudoers file do not ask for sudo for the custom waydroid scripts
@@ -641,6 +645,7 @@ if [ "$REPAIR_MODE" = true ]; then
 		/usr/bin/waydroid-mount \
 		/usr/bin/waydroid-firewall \
 		/usr/lib/steamos-waydroid/shared-folder.sh \
+		/usr/lib/steamos-waydroid/waydroid-profile.sh \
 		/usr/lib/systemd/system/waydroid-container.service \
 		/etc/sudoers.d/zzzzzzzz-waydroid; do
 		if [ ! -e "$required_file" ]; then
@@ -749,7 +754,7 @@ echo Waydroid has been successfully installed!
 echo Unmounting the custom /var/lib/waydroid
 echo -e "$current_password\n" | sudo systemctl stop waydroid-container.service
 unmount_waydroid_var
-if ! mv extras/waydroid.img ~/Android_Waydroid/waydroid.img; then
+if ! mv extras/waydroid.img "$WAYDROID_IMAGE"; then
 	echo Failed to activate the newly initialized Android image. >&2
 	abort_run
 fi

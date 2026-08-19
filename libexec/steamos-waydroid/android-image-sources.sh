@@ -6,6 +6,10 @@
 # artifacts here so installer control flow does not acquire release URLs.
 SUPECHICKEN_SOURCEFORGE_BASE=https://downloads.sourceforge.net/project/waydroid-atv/images
 
+# LineageOS 21.0 / Android 14. This release is a single Vanilla archive which
+# contains both system.img and vendor.img.
+ANDROID14_COMBINED_URL=$SUPECHICKEN_SOURCEFORGE_BASE/non-atv-images/lineage-21.0-20260125-UNOFFICIAL-waydroid_x86_64.zip
+
 # LineageOS 22.2 / Android 15. This release is a single Vanilla archive which
 # contains both system.img and vendor.img. The publisher does not provide a
 # corresponding GApps image artifact for this release.
@@ -45,6 +49,12 @@ set_android_image_selection() {
 		ANDROID_VERSION=13
 		ANDROID_VARIANT=VANILLA
 		ANDROID_IMAGE_PACKAGING=official-ota
+		;;
+	A14_NO_GAPPS)
+		ANDROID_VERSION=14
+		ANDROID_VARIANT=VANILLA
+		ANDROID_IMAGE_PACKAGING=combined
+		ANDROID_COMBINED_URL=$ANDROID14_COMBINED_URL
 		;;
 	A15_NO_GAPPS)
 		ANDROID_VERSION=15
@@ -180,7 +190,7 @@ record_test_android_metadata() {
 		printf 'error: refusing to write test metadata outside the test profile\n' >&2
 		return 1
 	}
-	[[ $ANDROID_VERSION =~ ^(13|15|16)$ ]] || return 1
+	[[ $ANDROID_VERSION =~ ^(13|14|15|16)$ ]] || return 1
 	[[ $ANDROID_VARIANT == GAPPS || $ANDROID_VARIANT == VANILLA ]] || return 1
 
 	mkdir -p -- "${WAYDROID_IMAGE%/*}" || return 1

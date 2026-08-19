@@ -28,6 +28,22 @@ set_android_image_selection A13_NO_GAPPS
 [[ $ANDROID_IMAGE_PACKAGING == official ]] ||
 	fail 'Android 13 Vanilla no longer uses the official initialization path'
 
+set_android_image_selection A14_NO_GAPPS
+[[ $ANDROID_VERSION == 14 && $ANDROID_VARIANT == VANILLA ]] ||
+	fail 'Android 14 Vanilla selection metadata is wrong'
+[[ $ANDROID_IMAGE_PACKAGING == combined ]] ||
+	fail 'Android 14 packaging is not marked combined'
+[[ $ANDROID_COMBINED_URL == *'/images/non-atv-images/lineage-21.0-20260125-UNOFFICIAL-waydroid_x86_64.zip' ]] ||
+	fail 'Android 14 did not select the published non-ATV x86_64 archive'
+[[ $ANDROID_COMBINED_URL != *waydroid_tv* && $ANDROID_COMBINED_URL != *WayDroidATV* ]] ||
+	fail 'Android 14 selected a TV image'
+
+if set_android_image_selection A14_GAPPS 2>"$TEST_ROOT/a14-gapps.log"; then
+	fail 'an unavailable Android 14 GApps artifact was invented'
+fi
+grep -Fq 'unsupported Android image selection: A14_GAPPS' "$TEST_ROOT/a14-gapps.log" ||
+	fail 'unavailable Android 14 GApps selection did not fail clearly'
+
 if set_android_image_selection A15_GAPPS 2>"$TEST_ROOT/a15-gapps.log"; then
 	fail 'an unavailable Android 15 GApps artifact was invented'
 fi
@@ -95,6 +111,14 @@ run_mock_install() (
 	fi
 )
 
+run_mock_install A14_NO_GAPPS || fail 'mocked Android 14 install failed'
+[[ $(grep -c '^download ' "$TEST_ROOT/A14_NO_GAPPS.log") == 1 ]] ||
+	fail 'Android 14 did not download exactly one combined archive'
+[[ $(grep -c '^extract .*combined.zip ' "$TEST_ROOT/A14_NO_GAPPS.log") == 2 ]] ||
+	fail 'Android 14 did not extract system and vendor from its combined archive'
+grep -Fq 'init waydroid init -f' "$TEST_ROOT/A14_NO_GAPPS.log" ||
+	fail 'Android 14 did not initialize from installed custom images'
+
 run_mock_install A15_NO_GAPPS || fail 'mocked Android 15 install failed'
 [[ $(grep -c '^download ' "$TEST_ROOT/A15_NO_GAPPS.log") == 1 ]] ||
 	fail 'Android 15 did not download exactly one combined archive'
@@ -139,6 +163,8 @@ run_mock_failure() (
 	! compgen -G "$WAYDROID_XDG_DATA_HOME/.image-download.*" >/dev/null
 )
 
+run_mock_failure A14_NO_GAPPS "$ANDROID14_COMBINED_URL" ||
+	fail 'Android 14 download failure did not stop cleanly without fallback'
 run_mock_failure A15_NO_GAPPS "$ANDROID15_COMBINED_URL" ||
 	fail 'Android 15 download failure did not stop cleanly without fallback'
 run_mock_failure A16_NO_GAPPS "$ANDROID16_VANILLA_SYSTEM_URL" ||
@@ -174,11 +200,21 @@ grep -Fq 'run_profile_sudo waydroid init -s GAPPS' "$INSTALLER" ||
 	fail 'Android 13 GApps no longer uses the official Waydroid init path'
 grep -Fq 'run_profile_sudo waydroid init' "$INSTALLER" ||
 	fail 'Android 13 Vanilla no longer uses the official Waydroid init path'
+grep -Fq '"Android 14 — Vanilla (Experimental)"' "$INSTALLER" ||
+	fail 'test installer does not offer Android 14 Vanilla'
 grep -Fq '"Android 15 — Vanilla (Experimental)"' "$INSTALLER" ||
 	fail 'test installer does not offer Android 15 Vanilla'
 grep -Fq '"Android 16 — GApps (Experimental)"' "$INSTALLER" ||
 	fail 'test installer does not offer Android 16 GApps'
 grep -Fq '"Android 16 — Vanilla (Experimental)"' "$INSTALLER" ||
 	fail 'test installer does not offer Android 16 Vanilla'
+[[ $(grep -Fc '"Android 14 — Vanilla (Experimental)"' "$INSTALLER") == 1 ]] ||
+	fail 'Android 14 must appear only in the test-image chooser'
+[[ $(grep -Fc '"Android 15 — Vanilla (Experimental)"' "$INSTALLER") == 1 ]] ||
+	fail 'Android 15 must appear only in the test-image chooser'
+[[ $(grep -Fc '"Android 16 — GApps (Experimental)"' "$INSTALLER") == 1 ]] ||
+	fail 'Android 16 GApps must appear only in the test-image chooser'
+[[ $(grep -Fc '"Android 16 — Vanilla (Experimental)"' "$INSTALLER") == 1 ]] ||
+	fail 'Android 16 Vanilla must appear only in the test-image chooser'
 
-printf 'ok - Android 13/15/16 test image selection, packaging, failures, and metadata\n'
+printf 'ok - Android 13/14/15/16 test image selection, packaging, failures, and metadata\n'

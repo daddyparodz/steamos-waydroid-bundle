@@ -23,38 +23,29 @@ resolve_waydroid_profile "$@" || exit $?
 export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
 PROFILE_HOME=${WAYDROID_IMAGE%/*}
 
-recreate_android_16_steam_input_nodes() {
-	local android_sdk event event_device major major_hex minor minor_hex product sys vendor
+start_android_16_controller_hotplug() {
+	local android_sdk count helper helper_pid pid_file
 
 	android_sdk="$(waydroid shell -- getprop ro.build.version.sdk 2>/dev/null)" || return 0
 	android_sdk="${android_sdk//$'\r'/}"
 	[ "$android_sdk" = "36" ] || return 0
 
-	# Android 16 / API 36 currently exposes controller sysfs devices to the
-	# Waydroid container but does not create usable /dev/input/event* nodes.
-	# Steam virtual controllers (28de:11ff) are recreated here with mode 0666.
-	for event_device in /dev/input/event*; do
-		[ -e "$event_device" ] || continue
+	helper=/usr/bin/waydroid-controller-hotplug
+	[ -x "$helper" ] || return 0
+	pid_file="/run/steamos-waydroid/controller-hotplug-$WAYDROID_PROFILE/pid"
 
-		event=${event_device##*/}
-		[[ "$event" =~ ^event[0-9]+$ ]] || continue
-		sys="/sys/class/input/$event/device"
+	"$helper" --stop "$WAYDROID_PROFILE" || true
+	"$helper" "$WAYDROID_PROFILE" &
+	helper_pid=$!
 
-		vendor="$(cat "$sys/id/vendor" 2>/dev/null)" || continue
-		[ "$vendor" = "28de" ] || continue
-		product="$(cat "$sys/id/product" 2>/dev/null)" || continue
-		[ "$product" = "11ff" ] || continue
-
-		major_hex="$(stat -c '%t' -- "$event_device" 2>/dev/null)" || continue
-		minor_hex="$(stat -c '%T' -- "$event_device" 2>/dev/null)" || continue
-		[[ "$major_hex" =~ ^[[:xdigit:]]+$ && "$minor_hex" =~ ^[[:xdigit:]]+$ ]] || continue
-		major=$((16#$major_hex))
-		minor=$((16#$minor_hex))
-
-		waydroid shell -- sh -c \
-			"rm -f /dev/input/$event; mknod -m 666 /dev/input/$event c $major $minor" \
-			>/dev/null 2>&1 || true
+	# Do not return until the helper owns its PID file (or has exited), so the
+	# shutdown path cannot race a helper that has not initialized yet.
+	for ((count = 0; count < 30; count++)); do
+		[ -r "$pid_file" ] && [ "$(cat "$pid_file" 2>/dev/null)" = "$helper_pid" ] && return 0
+		kill -0 "$helper_pid" 2>/dev/null || return 0
+		sleep 0.1
 	done
+	return 0
 }
 
 # capture the existing kernel.pid_max value
@@ -72,7 +63,7 @@ mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 "$WAYDROI
 
 # Steam Deck controller to work in Waydroid
 echo add | tee /sys/devices/virtual/input/input*/event*/uevent
-recreate_android_16_steam_input_nodes
+start_android_16_controller_hotplug
 
 # disable initial device setup via ADB
 waydroid shell pm disable com.google.android.setupwizard

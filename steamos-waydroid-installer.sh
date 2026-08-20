@@ -646,6 +646,7 @@ mkdir -p ~/Android_Waydroid/config &>/dev/null
 # waydroid startup and shutdown scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-startup-scripts /usr/bin/waydroid-startup-scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-shutdown-scripts /usr/bin/waydroid-shutdown-scripts
+echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-controller-hotplug /usr/bin/waydroid-controller-hotplug
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-mount /usr/bin/waydroid-mount
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-firewall /usr/bin/waydroid-firewall
 echo -e "$current_password\n" | sudo -S mkdir -p /usr/lib/steamos-waydroid
@@ -653,7 +654,7 @@ echo -e "$current_password\n" | sudo -S cp \
 	libexec/steamos-waydroid/shared-folder.sh \
 	libexec/steamos-waydroid/waydroid-profile.sh \
 	/usr/lib/steamos-waydroid/
-echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
+echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-controller-hotplug /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
 
 # custom sudoers file do not ask for sudo for the custom waydroid scripts
 echo -e "$current_password\n" | sudo -S visudo -cf extras/zzzzzzzz-waydroid >/dev/null || abort_run
@@ -746,6 +747,7 @@ if [ "$REPAIR_MODE" = true ]; then
 		/usr/bin/waydroid \
 		/usr/bin/waydroid-startup-scripts \
 		/usr/bin/waydroid-shutdown-scripts \
+		/usr/bin/waydroid-controller-hotplug \
 		/usr/bin/waydroid-mount \
 		/usr/bin/waydroid-firewall \
 		/usr/lib/steamos-waydroid/shared-folder.sh \

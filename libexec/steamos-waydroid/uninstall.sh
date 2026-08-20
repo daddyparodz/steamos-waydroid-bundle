@@ -335,6 +335,10 @@ stage_complete preflight
 
 stage_start stop-waydroid
 printf 'Stopping Waydroid and detaching its private image...\n'
+if [[ -x /usr/bin/waydroid-controller-hotplug ]]; then
+	sudo /usr/bin/waydroid-controller-hotplug --stop main || true
+	sudo /usr/bin/waydroid-controller-hotplug --stop test || true
+fi
 if ! unit_load_state="$(
 	systemctl show -p LoadState --value waydroid-container.service 2>/dev/null
 )"; then
@@ -576,6 +580,7 @@ sudo rm -f -- \
 	/etc/modprobe.d/waydroid_binder.conf \
 	/usr/bin/waydroid-startup-scripts \
 	/usr/bin/waydroid-shutdown-scripts \
+	/usr/bin/waydroid-controller-hotplug \
 	/usr/bin/waydroid-mount \
 	/usr/bin/waydroid-firewall
 sudo rm -rf -- \

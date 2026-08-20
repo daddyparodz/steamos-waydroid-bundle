@@ -1,0 +1,213 @@
+#!/bin/bash
+
+set -uo pipefail
+
+readonly TARGET_VENDOR=28de
+readonly TARGET_PRODUCT=11ff
+readonly RUNTIME_DIR=/run/steamos-waydroid
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROFILE_LIB=/usr/lib/steamos-waydroid/waydroid-profile.sh
+if [ ! -r "$PROFILE_LIB" ] &&
+	[ -r "$SCRIPT_DIR/../../libexec/steamos-waydroid/waydroid-profile.sh" ]; then
+	PROFILE_LIB="$SCRIPT_DIR/../../libexec/steamos-waydroid/waydroid-profile.sh"
+fi
+if [ ! -r "$PROFILE_LIB" ]; then
+	printf 'Android 16 controller workaround: profile helper is missing: %s\n' \
+		"$PROFILE_LIB" >&2
+	exit 0
+fi
+# shellcheck source=../../libexec/steamos-waydroid/waydroid-profile.sh
+source "$PROFILE_LIB"
+
+usage() {
+	printf 'usage: %s [--stop] [main|test]\n' "$0" >&2
+}
+
+process_is_this_helper() {
+	local argument pid=$1 script_path
+
+	[[ "$pid" =~ ^[0-9]+$ ]] || return 1
+	[ -r "/proc/$pid/cmdline" ] || return 1
+	script_path="$(readlink -f -- "$0" 2>/dev/null)" || return 1
+
+	while IFS= read -r -d '' argument; do
+		if [ -e "$argument" ] &&
+			[ "$(readlink -f -- "$argument" 2>/dev/null)" = "$script_path" ]; then
+			return 0
+		fi
+	done <"/proc/$pid/cmdline"
+	return 1
+}
+
+stop_helper() {
+	local count pid pid_file=$1
+
+	[ -r "$pid_file" ] || return 0
+	read -r pid <"$pid_file" || return 0
+	if ! process_is_this_helper "$pid"; then
+		rm -f -- "$pid_file"
+		return 0
+	fi
+
+	kill -TERM "$pid" 2>/dev/null || true
+	for ((count = 0; count < 30; count++)); do
+		kill -0 "$pid" 2>/dev/null || return 0
+		sleep 0.1
+	done
+}
+
+stop_mode=false
+if [ "${1:-}" = --stop ]; then
+	stop_mode=true
+	shift
+fi
+if (($# > 1)); then
+	usage
+	exit 2
+fi
+resolve_waydroid_profile "${1:-main}" || exit $?
+export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
+
+readonly PROFILE_RUNTIME_DIR="$RUNTIME_DIR/controller-hotplug-$WAYDROID_PROFILE"
+readonly PID_FILE="$PROFILE_RUNTIME_DIR/pid"
+readonly LOCK_FILE="$PROFILE_RUNTIME_DIR/lock"
+
+if [ "$stop_mode" = true ]; then
+	stop_helper "$PID_FILE"
+	exit 0
+fi
+
+mkdir -p -- "$PROFILE_RUNTIME_DIR" || exit 0
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+	exit 0
+fi
+printf '%s\n' "$$" >"$PID_FILE" || exit 0
+
+declare -A forwarded_events=()
+monitor_pid=
+monitor_fifo=
+
+remove_android_node() {
+	local event=$1
+
+	[[ -v "forwarded_events[$event]" ]] || return 0
+	printf 'Removing forwarded %s\n' "$event"
+	waydroid shell -- rm -f "/dev/input/$event" >/dev/null 2>&1 || true
+	unset 'forwarded_events[$event]'
+}
+
+forward_event() {
+	local attempt event=$1 event_device major major_hex minor minor_hex product sys vendor
+
+	[[ "$event" =~ ^event[0-9]+$ ]] || return 0
+	event_device="/dev/input/$event"
+	sys="/sys/class/input/$event/device"
+
+	# A udev ADD can arrive just before the sysfs ID files or device node settle.
+	for ((attempt = 0; attempt < 10; attempt++)); do
+		[ -e "$event_device" ] || {
+			sleep 0.1
+			continue
+		}
+		vendor="$(cat "$sys/id/vendor" 2>/dev/null)" || {
+			sleep 0.1
+			continue
+		}
+		product="$(cat "$sys/id/product" 2>/dev/null)" || {
+			sleep 0.1
+			continue
+		}
+		break
+	done
+
+	[ "${vendor:-}" = "$TARGET_VENDOR" ] || return 0
+	[ "${product:-}" = "$TARGET_PRODUCT" ] || return 0
+	major_hex="$(stat -c '%t' -- "$event_device" 2>/dev/null)" || return 0
+	minor_hex="$(stat -c '%T' -- "$event_device" 2>/dev/null)" || return 0
+	[[ "$major_hex" =~ ^[[:xdigit:]]+$ && "$minor_hex" =~ ^[[:xdigit:]]+$ ]] || return 0
+	major=$((16#$major_hex))
+	minor=$((16#$minor_hex))
+
+	# Recheck the IDs after stat in case the event number was reused mid-scan.
+	[ "$(cat "$sys/id/vendor" 2>/dev/null)" = "$TARGET_VENDOR" ] || return 0
+	[ "$(cat "$sys/id/product" 2>/dev/null)" = "$TARGET_PRODUCT" ] || return 0
+	printf 'Forwarding %s (%s:%s) -> major %s minor %s\n' \
+		"$event" "$TARGET_VENDOR" "$TARGET_PRODUCT" "$major" "$minor"
+	if waydroid shell -- sh -c \
+		"rm -f /dev/input/$event; mknod -m 666 /dev/input/$event c $major $minor" \
+		>/dev/null 2>&1; then
+		forwarded_events["$event"]=1
+	fi
+}
+
+session_is_running() {
+	waydroid status 2>/dev/null | grep -q '^Session:[[:space:]]*RUNNING[[:space:]]*$'
+}
+
+cleanup() {
+	local saved_status=$?
+
+	trap - EXIT HUP INT TERM
+	if [ -n "$monitor_pid" ]; then
+		kill "$monitor_pid" 2>/dev/null || true
+		wait "$monitor_pid" 2>/dev/null || true
+	fi
+	[ -n "$monitor_fifo" ] && rm -f -- "$monitor_fifo"
+	if [ -r "$PID_FILE" ] && [ "$(cat "$PID_FILE" 2>/dev/null)" = "$$" ]; then
+		rm -f -- "$PID_FILE"
+	fi
+	exit "$saved_status"
+}
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
+
+android_sdk="$(waydroid shell -- getprop ro.build.version.sdk 2>/dev/null)" || exit 0
+android_sdk="${android_sdk//$'\r'/}"
+[ "$android_sdk" = 36 ] || exit 0
+
+printf 'Android 16 controller workaround enabled\n'
+
+# Start monitoring before the scan so devices added during the scan are queued
+# in the FIFO and processed afterward.
+monitor_fifo="$PROFILE_RUNTIME_DIR/udevadm.$$"
+mkfifo -m 0600 -- "$monitor_fifo" || exit 0
+exec 3<>"$monitor_fifo"
+udevadm monitor --udev --subsystem-match=input --property \
+	>"$monitor_fifo" 2>/dev/null &
+monitor_pid=$!
+
+for event_device in /dev/input/event*; do
+	[ -e "$event_device" ] || continue
+	forward_event "${event_device##*/}"
+done
+
+action=
+devname=
+last_session_check=$SECONDS
+while kill -0 "$monitor_pid" 2>/dev/null; do
+	if IFS= read -r -t 1 -u 3 line; then
+		case "$line" in
+		ACTION=*) action=${line#ACTION=} ;;
+		DEVNAME=/dev/input/event*) devname=${line#DEVNAME=/dev/input/} ;;
+		'')
+			if [[ "$devname" =~ ^event[0-9]+$ ]]; then
+				case "$action" in
+				add) forward_event "$devname" ;;
+				remove) remove_android_node "$devname" ;;
+				esac
+			fi
+			action=
+			devname=
+			;;
+		esac
+	fi
+
+	if ((SECONDS - last_session_check >= 5)); then
+		session_is_running || exit 0
+		last_session_check=$SECONDS
+	fi
+done
+
+exit 0

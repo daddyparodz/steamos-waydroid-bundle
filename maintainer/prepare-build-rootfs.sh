@@ -6,6 +6,8 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/package-ownership.sh
+source "$SCRIPT_DIR/lib/package-ownership.sh"
 # shellcheck source=../libexec/steamos-waydroid/lib/target-fingerprint.sh
 source "$REPO_ROOT/libexec/steamos-waydroid/lib/target-fingerprint.sh"
 # shellcheck source=lib/kernel-support.sh
@@ -41,8 +43,17 @@ required_system_headers=(
 	stdio.h stdint.h features.h sys/eventfd.h linux/dma-buf.h glib-2.0/glib.h
 )
 
+bundle_owned_packages=(
+	libglibutil
+	libgbinder
+	python-gbinder
+	waydroid
+)
+
 printf 'Preparing the copied SteamOS rootfs for the bundle build.\n'
 printf 'The live Steam Deck is not modified by this script.\n\n'
+
+require_bundle_owned_packages_absent "${bundle_owned_packages[@]}"
 
 if [[ ! -s /etc/ssl/certs/ca-certificates.crt ]]; then
 	printf 'Creating the local CA trust bundle...\n'

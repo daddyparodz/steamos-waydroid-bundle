@@ -109,20 +109,26 @@ test_environment_install_allowed() {
 	fi
 }
 
-ensure_waydroid_runtime_inactive_for_test_install() {
+ensure_waydroid_runtime_inactive_for_test_operation() {
+	local operation=${1:-using Waydroid Test}
+
 	if systemctl is-active --quiet waydroid-container.service; then
-		printf 'error: Waydroid is currently active; shut it down before installing Waydroid Test\n' >&2
+		printf 'error: Waydroid is currently active; shut it down before %s\n' "$operation" >&2
 		return 1
 	fi
 	if waydroid_mounts_are_active; then
-		printf 'error: /var/lib/waydroid is already mounted; shut down Waydroid before installing Waydroid Test\n' >&2
+		printf 'error: /var/lib/waydroid is already mounted; shut down Waydroid before %s\n' "$operation" >&2
 		return 1
 	fi
 	if pgrep -x waydroid >/dev/null 2>&1 ||
 		pgrep -x waydroid-container >/dev/null 2>&1; then
-		printf 'error: a Waydroid process is still running; shut down Waydroid before installing Waydroid Test\n' >&2
+		printf 'error: a Waydroid process is still running; shut down Waydroid before %s\n' "$operation" >&2
 		return 1
 	fi
+}
+
+ensure_waydroid_runtime_inactive_for_test_install() {
+	ensure_waydroid_runtime_inactive_for_test_operation "installing Waydroid Test"
 }
 
 commit_new_android_image() {

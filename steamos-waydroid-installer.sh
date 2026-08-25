@@ -15,6 +15,7 @@ REINSTALL_ANDROID_MODE=false
 AUTO_REPAIR_MODE=false
 ANDROID_REINSTALL_HAS_EXISTING=false
 TEST_INSTALL_MODE=false
+REMOVE_TEST_MODE=false
 TEST_INSTALL_COMMITTED=false
 TEST_INSTALL_CLEANUP_DONE=false
 usage() {
@@ -23,6 +24,7 @@ usage() {
 	echo "  --repair                   Repairs the current installation of Waydroid." >&2
 	echo "  --reinstall-android        Reinstalls the Android system on Waydroid." >&2
 	echo "  --install-test             Installs a separate experimental Waydroid Test environment." >&2
+	echo "  --remove-test              Removes the separate Waydroid Test Android environment." >&2
 	echo "  --configure-artifacts      Configures additional artifacts for selecting a bundle." >&2
 	echo "  --uninstall                Uninstalls Waydroid from SteamOS." >&2
 	echo "  --purge-android            Purges all Android data and configurations." >&2
@@ -38,6 +40,7 @@ case "${1:-}" in
 --repair) REPAIR_MODE=true ;;
 --reinstall-android) REINSTALL_ANDROID_MODE=true ;;
 --install-test) TEST_INSTALL_MODE=true ;;
+--remove-test) REMOVE_TEST_MODE=true ;;
 --configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
 --uninstall) UNINSTALL_MODE=true ;;
 --purge-android) PURGE_ANDROID_MODE=true ;;
@@ -48,6 +51,10 @@ case "${1:-}" in
 	exit 1
 	;;
 esac
+
+if [ "$REMOVE_TEST_MODE" = true ]; then
+	exec "$SCRIPT_DIR/libexec/steamos-waydroid/remove-test-environment.sh"
+fi
 
 clear
 

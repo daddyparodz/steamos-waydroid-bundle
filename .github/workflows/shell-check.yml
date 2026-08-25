@@ -74,4 +74,5 @@ jobs:
           tests/test-shared-folder.sh
           tests/test-waydroid-profiles.sh
           tests/test-test-environment.sh
+          tests/test-remove-test-environment.sh
           tests/test-android-image-sources.sh

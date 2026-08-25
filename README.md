@@ -173,6 +173,7 @@ deployment, or follow the maintainer build procedure.
 | `./steamos-waydroid-installer.sh --repair`                  | Explicitly require the protected existing-image repair path.                                                                                        |
 | `./steamos-waydroid-installer.sh --reinstall-android`       | Deliberately create a new Android instance after typed confirmation. Existing image and user state are archived first.                              |
 | `./steamos-waydroid-installer.sh --install-test`             | Install a separate experimental Waydroid Test image and user state without modifying the normal Android environment.                                |
+| `./steamos-waydroid-installer.sh --remove-test`              | Delete only the separate experimental Waydroid Test Android environment; the normal environment and Steam shortcuts are not modified.               |
 | `./steamos-waydroid-installer.sh --configure-artifacts`     | Replace the Deck's bundle source through the advanced configuration wizard.                                                                         |
 | `./steamos-waydroid-installer.sh --uninstall`               | Remove host integration while retaining Android state, the checkout, installed bundles, and artifact configuration.                                 |
 | `./steamos-waydroid-installer.sh --purge-android`           | Delete Android state and reinstall archives while retaining the checkout and verified bundles.                                                      |
@@ -239,6 +240,11 @@ The test slot contains one Android installation at a time. Its selected version
 and variant are recorded in `~/Android_Waydroid/test/android-version` and
 `~/Android_Waydroid/test/android-variant` for diagnostics. Recreate the test
 environment to switch versions; there is no automatic fallback or migration.
+
+Run `./steamos-waydroid-installer.sh --remove-test` to permanently delete the
+separate test image and test-specific user state. This leaves the normal
+Waydroid environment untouched and does not inspect or modify Steam shortcuts
+or artwork.
 
 Before every launch, the helper checks the current SteamOS fingerprint and
 reactivates an already-installed compatible bundle when possible. After a

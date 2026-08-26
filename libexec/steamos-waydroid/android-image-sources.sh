@@ -6,20 +6,17 @@
 # artifacts here so installer control flow does not acquire release URLs.
 SUPECHICKEN_SOURCEFORGE_BASE=https://downloads.sourceforge.net/project/waydroid-atv/images
 
-# LineageOS 21.0 / Android 14. This release is a single Vanilla archive which
-# contains both system.img and vendor.img.
-ANDROID14_COMBINED_URL=$SUPECHICKEN_SOURCEFORGE_BASE/non-atv-images/lineage-21.0-20260125-UNOFFICIAL-waydroid_x86_64.zip
-
-# LineageOS 22.2 / Android 15. This release is a single Vanilla archive which
-# contains both system.img and vendor.img. The publisher does not provide a
-# corresponding GApps image artifact for this release.
-ANDROID15_COMBINED_URL=$SUPECHICKEN_SOURCEFORGE_BASE/non-atv-images/lineage-22.2-20260224-UNOFFICIAL-waydroid_x86_64.zip
-
 # LineageOS 23.2 / Android 16 QPR2. System and vendor are separate archives;
 # the same vendor image is used by the GApps and Vanilla system variants.
 ANDROID16_GAPPS_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_x86_64/lineage-23.2-20260717-GAPPS-waydroid_x86_64-system.zip
 ANDROID16_VANILLA_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_x86_64/lineage-23.2-20260717-VANILLA-waydroid_x86_64-system.zip
 ANDROID16_VENDOR_URL=$SUPECHICKEN_SOURCEFORGE_BASE/vendor/waydroid_x86_64/lineage-23.2-20260717-MAINLINE-waydroid_x86_64-vendor.zip
+
+# LineageOS 23.0 / Android TV 16 QPR0. The TV system and vendor images are a
+# matched release and must not be mixed with the regular Android 16 QPR2 set.
+ANDROID16_TV_GAPPS_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_tv_x86_64/lineage-23.0-20260403-GAPPS-waydroid_tv_x86_64-system.zip
+ANDROID16_TV_VANILLA_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_tv_x86_64/lineage-23.0-20260403-VANILLA-waydroid_tv_x86_64-system.zip
+ANDROID16_TV_VENDOR_URL=$SUPECHICKEN_SOURCEFORGE_BASE/vendor/waydroid_tv_x86_64/lineage-23.0-20260403-MAINLINE-waydroid_tv_x86_64-vendor.zip
 
 set_android_image_selection() {
 	local choice=$1
@@ -29,7 +26,6 @@ set_android_image_selection() {
 	ANDROID_IMAGE_PACKAGING=official
 	ANDROID_SYSTEM_URL=
 	ANDROID_VENDOR_URL=
-	ANDROID_COMBINED_URL=
 
 	case "$choice" in
 	A13_GAPPS)
@@ -50,18 +46,6 @@ set_android_image_selection() {
 		ANDROID_VARIANT=VANILLA
 		ANDROID_IMAGE_PACKAGING=official-ota
 		;;
-	A14_NO_GAPPS)
-		ANDROID_VERSION=14
-		ANDROID_VARIANT=VANILLA
-		ANDROID_IMAGE_PACKAGING=combined
-		ANDROID_COMBINED_URL=$ANDROID14_COMBINED_URL
-		;;
-	A15_NO_GAPPS)
-		ANDROID_VERSION=15
-		ANDROID_VARIANT=VANILLA
-		ANDROID_IMAGE_PACKAGING=combined
-		ANDROID_COMBINED_URL=$ANDROID15_COMBINED_URL
-		;;
 	A16_GAPPS)
 		ANDROID_VERSION=16
 		ANDROID_VARIANT=GAPPS
@@ -75,6 +59,20 @@ set_android_image_selection() {
 		ANDROID_IMAGE_PACKAGING=separate
 		ANDROID_SYSTEM_URL=$ANDROID16_VANILLA_SYSTEM_URL
 		ANDROID_VENDOR_URL=$ANDROID16_VENDOR_URL
+		;;
+	TV16_GAPPS)
+		ANDROID_VERSION=16
+		ANDROID_VARIANT=GAPPS
+		ANDROID_IMAGE_PACKAGING=separate
+		ANDROID_SYSTEM_URL=$ANDROID16_TV_GAPPS_SYSTEM_URL
+		ANDROID_VENDOR_URL=$ANDROID16_TV_VENDOR_URL
+		;;
+	TV16_NO_GAPPS)
+		ANDROID_VERSION=16
+		ANDROID_VARIANT=VANILLA
+		ANDROID_IMAGE_PACKAGING=separate
+		ANDROID_SYSTEM_URL=$ANDROID16_TV_VANILLA_SYSTEM_URL
+		ANDROID_VENDOR_URL=$ANDROID16_TV_VENDOR_URL
 		;;
 	*)
 		printf 'error: unsupported Android image selection: %s\n' "$choice" >&2
@@ -143,11 +141,10 @@ install_system_vendor_images() {
 }
 
 install_experimental_android_image() {
-	local download_dir combined_archive system_archive vendor_archive
+	local download_dir system_archive vendor_archive
 	local extracted_dir
 
-	[[ ${ANDROID_IMAGE_PACKAGING:-} == combined ||
-		${ANDROID_IMAGE_PACKAGING:-} == separate ]] || {
+	[[ ${ANDROID_IMAGE_PACKAGING:-} == separate ]] || {
 		printf 'error: no experimental Android image was selected\n' >&2
 		return 2
 	}
@@ -156,19 +153,12 @@ install_experimental_android_image() {
 	download_dir=$(mktemp -d "$WAYDROID_XDG_DATA_HOME/.image-download.XXXXXX") || return 1
 	extracted_dir=$download_dir/extracted
 
-	if [[ $ANDROID_IMAGE_PACKAGING == combined ]]; then
-		combined_archive=$download_dir/combined.zip
-		download_android_image "$ANDROID_COMBINED_URL" "$combined_archive" &&
-			extract_android_image "$combined_archive" "$extracted_dir" system &&
-			extract_android_image "$combined_archive" "$extracted_dir" vendor
-	else
-		system_archive=$download_dir/system.zip
-		vendor_archive=$download_dir/vendor.zip
-		download_android_image "$ANDROID_SYSTEM_URL" "$system_archive" &&
-			download_android_image "$ANDROID_VENDOR_URL" "$vendor_archive" &&
-			extract_android_image "$system_archive" "$extracted_dir" system &&
-			extract_android_image "$vendor_archive" "$extracted_dir" vendor
-	fi || {
+	system_archive=$download_dir/system.zip
+	vendor_archive=$download_dir/vendor.zip
+	download_android_image "$ANDROID_SYSTEM_URL" "$system_archive" &&
+		download_android_image "$ANDROID_VENDOR_URL" "$vendor_archive" &&
+		extract_android_image "$system_archive" "$extracted_dir" system &&
+		extract_android_image "$vendor_archive" "$extracted_dir" vendor || {
 		rm -rf -- "$download_dir"
 		return 1
 	}
@@ -190,7 +180,7 @@ record_test_android_metadata() {
 		printf 'error: refusing to write test metadata outside the test profile\n' >&2
 		return 1
 	}
-	[[ $ANDROID_VERSION =~ ^(13|14|15|16)$ ]] || return 1
+	[[ $ANDROID_VERSION =~ ^(13|16)$ ]] || return 1
 	[[ $ANDROID_VARIANT == GAPPS || $ANDROID_VARIANT == VANILLA ]] || return 1
 
 	mkdir -p -- "${WAYDROID_IMAGE%/*}" || return 1

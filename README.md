@@ -107,16 +107,14 @@ For a new Android instance, the installer offers:
 
 Those normal-install choices remain on Android 13. The separate **Install Test
 Environment** flow offers the same official Android 13 GApps and Vanilla
-choices plus experimental regular (non-TV) x86_64 images:
+choices plus experimental regular and TV x86_64 images:
 
-- Android 14 Vanilla (Experimental);
-- Android 15 Vanilla (Experimental);
 - Android 16 GApps (Experimental);
-- Android 16 Vanilla (Experimental).
+- Android 16 Vanilla (Experimental);
+- Android TV 16 GApps (Experimental);
+- Android TV 16 Vanilla (Experimental).
 
-The current Android 14 and Android 15 releases do not include GApps image
-artifacts, so the installer does not advertise those unavailable variants. The
-experimental Android 14/15/16 images are provided by the independent
+The experimental Android 16 images are provided by the independent
 [SupeChicken / WayDroid-ATV project](https://sourceforge.net/projects/waydroid-atv/files/images/);
 they are not produced or officially supported by this repository. Their exact,
 pinned SourceForge artifacts are centralized in
@@ -126,7 +124,7 @@ The official Android 13 standard images use `waydroid_script` to install
 libhoudini ARM translation, Widevine, and fingerprint configuration. The TV
 images are provided separately and already contain their required ARM
 translation and Widevine components. The Android-13-specific extras and
-fingerprint spoof are deliberately skipped for experimental Android 14/15/16;
+fingerprint spoof are deliberately skipped for experimental Android 16;
 their built-in ARM support is retained and Widevine is not modified.
 
 The fresh-install path also downloads the

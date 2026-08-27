@@ -3,7 +3,19 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-IMAGE=/home/deck/Android_Waydroid/waydroid.img
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROFILE_LIB=/usr/lib/steamos-waydroid/waydroid-profile.sh
+if [[ ! -r "$PROFILE_LIB" && -r "$SCRIPT_DIR/../../libexec/steamos-waydroid/waydroid-profile.sh" ]]; then
+	PROFILE_LIB="$SCRIPT_DIR/../../libexec/steamos-waydroid/waydroid-profile.sh"
+fi
+[[ -r "$PROFILE_LIB" ]] || {
+	printf 'error: Waydroid profile helper is missing: %s\n' "$PROFILE_LIB" >&2
+	exit 1
+}
+# shellcheck source=../../libexec/steamos-waydroid/waydroid-profile.sh
+source "$PROFILE_LIB"
+
+IMAGE=""
 WAYDROID_MOUNT=/var/lib/waydroid
 LOOP_DEVICE=""
 MOUNTED_BY_SCRIPT=false
@@ -192,34 +204,74 @@ validate_mounted_image() {
 		die "Android image has an empty waydroid.cfg"
 }
 
-validate_binder
-validate_image
+validate_runtime_profile() {
+	local mounted_source backing_file selected_image
 
-systemctl stop waydroid-container.service 2>/dev/null || true
-if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
-	umount "$WAYDROID_MOUNT" || die "could not unmount the previous Waydroid image"
-fi
-if findmnt -rn -o TARGET | grep -Eq "^${WAYDROID_MOUNT}(/|$)"; then
-	findmnt -R "$WAYDROID_MOUNT" >&2 || true
-	die "a stale mount remains below $WAYDROID_MOUNT"
-fi
-
-while IFS=: read -r attached_loop _; do
-	if [[ "$attached_loop" == /dev/loop* ]]; then
-		losetup -d "$attached_loop" ||
-			die "could not detach the previous Android image loop device: $attached_loop"
+	if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
+		mounted_source="$(findmnt -rn -o SOURCE --mountpoint "$WAYDROID_MOUNT")" ||
+			die "could not identify the image mounted at $WAYDROID_MOUNT"
+		[[ "$mounted_source" == /dev/loop* ]] ||
+			die "an unknown filesystem is mounted at $WAYDROID_MOUNT; shut down Waydroid first"
+		backing_file="$(losetup -n -O BACK-FILE -- "$mounted_source" 2>/dev/null | tail -n 1)"
+		[[ -n "$backing_file" ]] ||
+			die "could not identify the active Waydroid image; shut down Waydroid first"
+		selected_image="$(readlink -f -- "$IMAGE")"
+		backing_file="$(readlink -f -- "$backing_file")"
+		[[ "$backing_file" == "$selected_image" ]] ||
+			die "another Waydroid profile is active using $backing_file; shut it down before launching $WAYDROID_PROFILE"
+	elif systemctl is-active --quiet waydroid-container.service; then
+		die "Waydroid is active without an identifiable profile mount; shut it down first"
 	fi
-done < <(losetup -j "$IMAGE")
+}
 
-mkdir -p "$WAYDROID_MOUNT"
-trap cleanup_failed_mount EXIT
-trap 'exit 130' HUP INT TERM
-LOOP_DEVICE="$(losetup --find --show "$IMAGE")" ||
-	die "could not attach the Android image to a loop device"
-[[ "$LOOP_DEVICE" == /dev/loop* ]] || die "losetup returned an invalid loop device"
-mount -t ext4 "$LOOP_DEVICE" "$WAYDROID_MOUNT" || die "could not mount the Android image"
-MOUNTED_BY_SCRIPT=true
-validate_mounted_image
+waydroid_mount_main() {
+	local requested_profile="${1:-main}"
+	local operation="${2:-mount}"
 
-trap - EXIT HUP INT TERM
-printf 'Binder and Android image preflight passed.\n'
+	if (($# > 2)) || [[ "$operation" != mount && "$operation" != --check-only ]]; then
+		die "usage: $0 [main|test] [--check-only]"
+	fi
+	resolve_waydroid_profile "$requested_profile" || exit $?
+	IMAGE=$WAYDROID_IMAGE
+
+	validate_image
+	validate_runtime_profile
+	if [[ "$operation" == --check-only ]]; then
+		printf 'Waydroid profile %s is available.\n' "$WAYDROID_PROFILE"
+		return 0
+	fi
+	validate_binder
+
+	systemctl stop waydroid-container.service 2>/dev/null || true
+	if findmnt --mountpoint "$WAYDROID_MOUNT" >/dev/null 2>&1; then
+		umount "$WAYDROID_MOUNT" || die "could not unmount the previous Waydroid image"
+	fi
+	if findmnt -rn -o TARGET | grep -Eq "^${WAYDROID_MOUNT}(/|$)"; then
+		findmnt -R "$WAYDROID_MOUNT" >&2 || true
+		die "a stale mount remains below $WAYDROID_MOUNT"
+	fi
+
+	while IFS=: read -r attached_loop _; do
+		if [[ "$attached_loop" == /dev/loop* ]]; then
+			losetup -d "$attached_loop" ||
+				die "could not detach the previous Android image loop device: $attached_loop"
+		fi
+	done < <(losetup -j "$IMAGE")
+
+	mkdir -p "$WAYDROID_MOUNT"
+	trap cleanup_failed_mount EXIT
+	trap 'exit 130' HUP INT TERM
+	LOOP_DEVICE="$(losetup --find --show "$IMAGE")" ||
+		die "could not attach the Android image to a loop device"
+	[[ "$LOOP_DEVICE" == /dev/loop* ]] || die "losetup returned an invalid loop device"
+	mount -t ext4 "$LOOP_DEVICE" "$WAYDROID_MOUNT" || die "could not mount the Android image"
+	MOUNTED_BY_SCRIPT=true
+	validate_mounted_image
+
+	trap - EXIT HUP INT TERM
+	printf 'Binder and Android image preflight passed.\n'
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+	waydroid_mount_main "$@"
+fi

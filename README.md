@@ -18,28 +18,30 @@
 > remains responsible for the resulting software.
 
 SteamOS Waydroid Bundle installs Waydroid on a Steam Deck using host packages,
-Cage, wlroots, and wlr-randr built against the Deck's exact SteamOS userspace.
+Cage, wlroots, and wlr-randr built against a matching SteamOS userspace ABI.
 It keeps the persistent Android image under the `deck` user's home so routine
 SteamOS host repair can occur without recreating Android applications,
 settings, files, or login sessions.
 
 ## Compatibility and safety model
 
-The installer supports a SteamOS release only when a verified bundle has been
-published for the Deck's exact target fingerprint. The fingerprint includes
+The installer supports a SteamOS release only when a verified compatible bundle
+has been published. The fingerprint includes
 the SteamOS release and build plus relevant compiler, runtime, Python, Wayland,
 graphics, input, and system-library versions.
 
-Published support is therefore determined by the available target bundle
-catalog rather than by the SteamOS version number alone. Development and
-`main`-branch SteamOS builds remain experimental and require an exact matching
-published bundle.
+An exact version, build, and ABI match is always preferred. If no exact bundle
+exists, a bundle with the same userspace ABI is supported when the running
+kernel provides built-in Binder; its target-specific Binder package is skipped.
+Without built-in Binder, version/build matching remains strict. Development and
+`main`-branch SteamOS builds remain experimental, and existing SteamOS-family
+and branch checks still apply.
 
 Before requesting sudo access, the installer:
 
 - confirms that it is running locally in SteamOS Desktop Mode;
 - checks the SteamOS release and update branch;
-- selects an already-installed exact-match bundle or downloads one;
+- selects an already-installed exact or ABI-compatible bundle, or downloads one;
 - verifies the archive hash, paths, manifest, ELF dependencies, and target
   fingerprint;
 - exits without changing SteamOS or Android when no compatible bundle exists.
@@ -60,17 +62,16 @@ artifact source or another source you control and trust.
 
 ## Requirements
 
-- Steam Deck running a SteamOS release for which an exact verified target
-  bundle has been published;
-- an exact published target bundle for that SteamOS userspace;
+- Steam Deck running a supported SteamOS release with a compatible verified
+  bundle available;
+- an exact or ABI-compatible published bundle for that SteamOS userspace;
 - Desktop Mode with a working graphical session;
 - a sudo password for the `deck` user;
 - at least 10 GB free under the home filesystem for a new Android install;
 - internet access for source, bundle, and Android-image downloads.
 
-SteamOS development and `main` branches are experimental. The installer
-displays an explicit warning there, and an exact target bundle is still
-mandatory.
+SteamOS development and `main` branches are experimental. The installer still
+displays an explicit warning there.
 
 ## Install
 
@@ -84,6 +85,27 @@ cd ~/steamos-waydroid-bundle
 ./steamos-waydroid-installer.sh
 ```
 
+## Shared folder
+
+Install and repair ensure that `~/Waydroid Share` exists without replacing an
+existing directory or changing its contents, ownership, or permissions. While
+Waydroid is running, the normal mount lifecycle bind-mounts it at Android shared
+storage as `Waydroid Share`. Shutdown and uninstall unmount it when necessary,
+but uninstall never deletes the host folder or the files inside it.
+
+The share works in both the normal Android 13 environment and the Android 16
+test environment. Files created on SteamOS are visible and readable in Android,
+and the mount is removed during a normal Waydroid shutdown.
+
+Direct host/Android sharing currently has an ownership limitation. The host
+directory normally remains `deck:deck` with `0755` permissions, so arbitrary
+Android apps may be unable to create files or folders in it. Making the
+directory world-writable can permit writes, but Android-created content then
+appears on SteamOS under app-specific numeric UIDs and GIDs. Those IDs differ
+between Android installations and must not be hard-coded. Do not leave the
+share at `0777`; fully seamless bidirectional ownership mapping is not currently
+provided. The recommended use is making SteamOS files available to Android.
+
 On first run, the installer creates an ignored machine-local
 `.deck-config.env` with mode `0600` and selects the official public bundle
 Release. It then obtains the exact bundle before making privileged host
@@ -96,10 +118,35 @@ For a new Android instance, the installer offers:
 - Android TV 13 with Google Play;
 - Android TV 13 without Google Play.
 
-The standard Android images use `waydroid_script` to install libhoudini ARM
-translation, Widevine, and fingerprint configuration. The TV images are
-provided separately and already contain their required ARM translation and
-Widevine components.
+Those normal-install choices remain on Android 13. The separate **Install Test
+Environment** flow offers the same official Android 13 GApps and Vanilla
+choices plus experimental regular and TV x86_64 images:
+
+- Android 16 GApps (Experimental);
+- Android 16 Vanilla (Experimental);
+- Android TV 16 GApps (Experimental);
+- Android TV 16 Vanilla (Experimental).
+
+Use an Android 16 test environment with a Waydroid version that properly
+supports Android 16. Hardware testing confirmed that Waydroid 1.6.3 on SteamOS
+Beta 3.8.25 (`BUILD_ID=20260807.2`) boots, runs, and shuts down Android 16
+correctly. With Waydroid 1.5.4 on SteamOS Stable 3.8.16
+(`BUILD_ID=20260716.1`), Android 16 can still boot and run, but container
+lifecycle operations such as shutdown can be unreliable. Android 13 remains
+the normal supported installation path.
+
+The experimental Android 16 images are provided by the independent
+[SupeChicken / WayDroid-ATV project](https://sourceforge.net/projects/waydroid-atv/files/images/);
+they are not produced or officially supported by this repository. Their exact,
+pinned SourceForge artifacts are centralized in
+`libexec/steamos-waydroid/android-image-sources.sh`.
+
+The official Android 13 standard images use `waydroid_script` to install
+libhoudini ARM translation, Widevine, and fingerprint configuration. The TV
+images are provided separately and already contain their required ARM
+translation and Widevine components. The Android-13-specific extras and
+fingerprint spoof are deliberately skipped for experimental Android 16;
+their built-in ARM support is retained and Widevine is not modified.
 
 The fresh-install path also downloads the
 [StevenBlack hosts list](https://github.com/StevenBlack/hosts) variant that
@@ -144,6 +191,8 @@ deployment, or follow the maintainer build procedure.
 | `./steamos-waydroid-installer.sh`                           | Fresh install when no image exists; otherwise automatic protected repair.                                                                           |
 | `./steamos-waydroid-installer.sh --repair`                  | Explicitly require the protected existing-image repair path.                                                                                        |
 | `./steamos-waydroid-installer.sh --reinstall-android`       | Deliberately create a new Android instance after typed confirmation. Existing image and user state are archived first.                              |
+| `./steamos-waydroid-installer.sh --install-test`             | Install a separate experimental Waydroid Test image and user state without modifying the normal Android environment.                                |
+| `./steamos-waydroid-installer.sh --remove-test`              | Delete only the separate experimental Waydroid Test Android environment; the normal environment and Steam shortcuts are not modified.               |
 | `./steamos-waydroid-installer.sh --configure-artifacts`     | Replace the Deck's bundle source through the advanced configuration wizard.                                                                         |
 | `./steamos-waydroid-installer.sh --uninstall`               | Remove host integration while retaining Android state, the checkout, installed bundles, and artifact configuration.                                 |
 | `./steamos-waydroid-installer.sh --purge-android`           | Delete Android state and reinstall archives while retaining the checkout and verified bundles.                                                      |
@@ -199,6 +248,23 @@ cd ~/Android_Waydroid
 ./Android_Waydroid_Cage.sh
 ```
 
+After `--install-test` succeeds, Steam also contains a separate **Waydroid
+Test** entry. It uses `~/Android_Waydroid/test/waydroid.img` and
+`~/.local/share/waydroid-test/waydroid`; the normal Waydroid entry continues to
+use the existing image and user data. Both environments can remain installed,
+but they share `/var/lib/waydroid` and `waydroid-container.service`, so shut one
+down before launching or installing the other.
+
+The test slot contains one Android installation at a time. Its selected version
+and variant are recorded in `~/Android_Waydroid/test/android-version` and
+`~/Android_Waydroid/test/android-variant` for diagnostics. Recreate the test
+environment to switch versions; there is no automatic fallback or migration.
+
+Run `./steamos-waydroid-installer.sh --remove-test` to permanently delete the
+separate test image and test-specific user state. This leaves the normal
+Waydroid environment untouched and does not inspect or modify Steam shortcuts
+or artwork.
+
 Before every launch, the helper checks the current SteamOS fingerprint and
 reactivates an already-installed compatible bundle when possible. After a
 SteamOS A/B rollback, this can restore the matching retained bundle without a
@@ -232,9 +298,10 @@ does not make an untrusted source safe.
 
 ### No compatible bundle
 
-The error identifies the SteamOS version, build, branch, and target. Do not
-bypass the target check for an ordinary installation. A maintainer must build
-and publish a bundle against that userspace.
+The error identifies the SteamOS version, build, branch, and target. Do not use
+the explicit mismatch override for an ordinary installation. A maintainer must
+publish a bundle with the same userspace ABI; if Binder is not built into the
+running kernel, an exact target bundle is required.
 
 ### Installer says it is not in Desktop Mode
 
@@ -250,6 +317,32 @@ Ctrl-C and retry if the chosen mirror is stalled.
 
 The installer deliberately preserves an existing matching Steam shortcut. To
 replace it, delete that shortcut through Steam and run the installer again.
+
+### Another Waydroid profile is active
+
+After leaving Waydroid in Gaming Mode, the previously running container or
+image can occasionally remain active. Launching the other environment then
+reports an error similar to `another Waydroid profile is active`. This guard is
+intentional: it prevents one profile from replacing `/var/lib/waydroid` while
+the other image is still active.
+
+Exit to Desktop Mode, open Konsole, and shut down the environment that was
+previously running. For the normal Android environment, run:
+
+```bash
+sudo /usr/bin/waydroid-shutdown-scripts main
+```
+
+For the test environment, run:
+
+```bash
+sudo /usr/bin/waydroid-shutdown-scripts test
+```
+
+Return to Gaming Mode and launch the desired environment again. Rebooting the
+Deck is also a reasonable recovery if the container does not shut down cleanly.
+This stale-container behaviour can affect either environment and is not
+specific to the test profile.
 
 ### Compatibility reports
 

@@ -174,9 +174,14 @@ Conceptually:
 
 ```text
 target=<TARGET_ENVIRONMENT_ID>|<preferred bundle version>
+abi=<ABI_SHA256>|<preferred bundle version>
 ```
 
-Bundle names are opaque to the resolver. `auto` does not compare wlroots version numbers and does not treat names containing `test` specially.
+The target entry is always checked first. The ABI entry is used only when no
+exact target exists and the running kernel provides built-in Binder. Catalog
+format 2 adds ABI entries while retaining the format 1 target-entry syntax for
+older clients. Bundle names are opaque to the resolver. `auto` does not compare
+wlroots version numbers and does not treat names containing `test` specially.
 
 ### `latest.manifest`
 

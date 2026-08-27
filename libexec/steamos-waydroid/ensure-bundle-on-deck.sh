@@ -24,13 +24,34 @@ BUILDS_ROOT="$PROJECT_ROOT/builds"
 CURRENT_LINK="$PROJECT_ROOT/current"
 TARGET_MISMATCH_ALLOW_FILE="$PROJECT_ROOT/allow-target-mismatch"
 
-bundle_matches_current_target() {
+bundle_compatibility_state() {
 	local candidate="$1"
-	[[ -d "$candidate" ]] || return 1
-	[[ -f "$candidate/.verified" ]] || return 1
-	[[ -x "$candidate/tools/check-bundle-target.sh" ]] || return 1
-	"$SCRIPT_DIR/verify-bundle.sh" "$candidate" >/dev/null 2>&1 || return 1
-	"$candidate/tools/check-bundle-target.sh" "$candidate" >/dev/null 2>&1
+	local state
+	[[ -d "$candidate" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	[[ -f "$candidate/.verified" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	[[ -x "$candidate/tools/check-bundle-target.sh" ]] || {
+		printf 'incompatible\n'
+		return
+	}
+	"$SCRIPT_DIR/verify-bundle.sh" "$candidate" >/dev/null 2>&1 || {
+		printf 'incompatible\n'
+		return
+	}
+	if state=$("$candidate/tools/check-bundle-target.sh" \
+		"$candidate" --compatibility-state 2>/dev/null); then
+		printf '%s\n' "$state"
+	elif "$candidate/tools/check-bundle-target.sh" "$candidate" >/dev/null 2>&1; then
+		# Bundles made before compatibility states supported exact checks only.
+		printf 'exact\n'
+	else
+		printf 'incompatible\n'
+	fi
 }
 
 activate_bundle() {
@@ -45,19 +66,27 @@ activate_bundle() {
 		ln -sfn "builds/$bundle_version" current
 	)
 	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"
-	printf 'Activated matching installed bundle: %s\n' "$bundle_version"
+	printf 'Activated %s installed bundle: %s\n' "$2" "$bundle_version"
 }
 
-if bundle_matches_current_target "$CURRENT_LINK"; then
-	printf 'Current bundle already matches this SteamOS target: %s\n' \
+if [[ "$(bundle_compatibility_state "$CURRENT_LINK")" == exact ]]; then
+	printf 'Current bundle is an exact match: %s\n' \
 		"$(basename -- "$(readlink -f "$CURRENT_LINK")")"
 	exit 0
 fi
 
 printf 'Current bundle is missing or incompatible; checking installed bundles...\n'
 while IFS= read -r candidate; do
-	if bundle_matches_current_target "$candidate"; then
-		activate_bundle "$candidate"
+	if [[ "$(bundle_compatibility_state "$candidate")" == exact ]]; then
+		activate_bundle "$candidate" exact
+		exit 0
+	fi
+done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+
+while IFS= read -r candidate; do
+	if [[ "$(bundle_compatibility_state "$candidate")" == abi-compatible ]]; then
+		activate_bundle "$candidate" ABI-compatible
+		printf 'Userspace ABI matches and the running kernel provides Binder.\n'
 		exit 0
 	fi
 done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
@@ -65,7 +94,7 @@ done < <(find "$BUILDS_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null 
 printf 'No matching local bundle is installed; checking the artifact source...\n'
 "$SCRIPT_DIR/install-bundle-on-deck.sh"
 
-if ! bundle_matches_current_target "$CURRENT_LINK"; then
+if [[ "$(bundle_compatibility_state "$CURRENT_LINK")" == incompatible ]]; then
 	die "artifact installation did not activate a bundle matching this SteamOS target"
 fi
 

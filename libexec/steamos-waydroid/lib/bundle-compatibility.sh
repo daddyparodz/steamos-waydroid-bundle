@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Classify a bundle fingerprint against a current host fingerprint. The state
+# is printed as one of: exact, abi-compatible, incompatible.
+
+bundle_compatibility() {
+	local bundle_fingerprint="$1"
+	local current_fingerprint="$2"
+	local expected_version expected_build expected_abi
+	local current_version current_build current_abi
+
+	expected_version="$(fingerprint_value "$bundle_fingerprint" STEAMOS_VERSION_ID)"
+	expected_build="$(fingerprint_value "$bundle_fingerprint" STEAMOS_BUILD_ID)"
+	expected_abi="$(fingerprint_value "$bundle_fingerprint" ABI_SHA256)"
+	current_version="$(fingerprint_value "$current_fingerprint" STEAMOS_VERSION_ID)"
+	current_build="$(fingerprint_value "$current_fingerprint" STEAMOS_BUILD_ID)"
+	current_abi="$(fingerprint_value "$current_fingerprint" ABI_SHA256)"
+
+	if [[ -n "$expected_abi" && "$expected_version" == "$current_version" ]] &&
+		[[ "$expected_build" == "$current_build" ]] &&
+		[[ "$expected_abi" == "$current_abi" ]]; then
+		printf 'exact\n'
+	elif [[ -n "$expected_abi" && "$expected_abi" == "$current_abi" ]] &&
+		running_kernel_has_builtin_binder; then
+		printf 'abi-compatible\n'
+	else
+		printf 'incompatible\n'
+	fi
+}

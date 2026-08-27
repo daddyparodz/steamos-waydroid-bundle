@@ -5,9 +5,16 @@ IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
-ANDROID_HOME="$HOME/Android_Waydroid"
-ANDROID_IMAGE="$ANDROID_HOME/waydroid.img"
-WAYDROID_USER_STATE="$HOME/.local/share/waydroid"
+# Uninstall remains scoped to the existing main installation in stage 1.
+# shellcheck source=waydroid-profile.sh
+source "$SCRIPT_DIR/waydroid-profile.sh"
+resolve_waydroid_profile main || exit $?
+ANDROID_HOME=${WAYDROID_IMAGE%/*}
+ANDROID_IMAGE=$WAYDROID_IMAGE
+WAYDROID_SHARE_TARGET="$WAYDROID_DATA/media/0/Waydroid Share"
+resolve_waydroid_profile test || exit $?
+WAYDROID_TEST_HOME=${WAYDROID_IMAGE%/*}
+resolve_waydroid_profile main || exit $?
 WAYDROID_LEGACY_USER_STATE="$HOME/waydroid"
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid"
 PRESERVATION_CANDIDATE="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-waydroid-preserved-reset"
@@ -293,6 +300,7 @@ This permanently deletes this installer's Waydroid instance, including:
 By default it intentionally keeps:
   - this Git checkout
   - ~/.local/opt/steamos-waydroid (the verified target-built bundles)
+  - a separately installed Waydroid Test image and user data
 
 These retained prerequisites are required to run the installer again.
 EOF
@@ -327,6 +335,10 @@ stage_complete preflight
 
 stage_start stop-waydroid
 printf 'Stopping Waydroid and detaching its private image...\n'
+if [[ -x /usr/bin/waydroid-controller-hotplug ]]; then
+	sudo /usr/bin/waydroid-controller-hotplug --stop main || true
+	sudo /usr/bin/waydroid-controller-hotplug --stop test || true
+fi
 if ! unit_load_state="$(
 	systemctl show -p LoadState --value waydroid-container.service 2>/dev/null
 )"; then
@@ -352,6 +364,17 @@ remaining_waydroid_processes="$(
 if [[ -n "$remaining_waydroid_processes" ]]; then
 	printf 'error: Waydroid processes remain after service shutdown:\n%s\n' \
 		"$remaining_waydroid_processes" >&2
+	exit 1
+fi
+
+# Unmount this explicitly before any Android-state cleanup. Otherwise a purge
+# could traverse the bind target and delete files from ~/Waydroid Share.
+if findmnt --mountpoint "$WAYDROID_SHARE_TARGET" >/dev/null 2>&1; then
+	sudo umount "$WAYDROID_SHARE_TARGET"
+fi
+if findmnt --mountpoint "$WAYDROID_SHARE_TARGET" >/dev/null 2>&1; then
+	printf 'error: Waydroid shared folder is still mounted; reset stopped: %s\n' \
+		"$WAYDROID_SHARE_TARGET" >&2
 	exit 1
 fi
 
@@ -557,9 +580,14 @@ sudo rm -f -- \
 	/etc/modprobe.d/waydroid_binder.conf \
 	/usr/bin/waydroid-startup-scripts \
 	/usr/bin/waydroid-shutdown-scripts \
+	/usr/bin/waydroid-controller-hotplug \
 	/usr/bin/waydroid-mount \
 	/usr/bin/waydroid-firewall
-sudo rm -rf -- /var/lib/waydroid /usr/lib/waydroid /etc/waydroid-extra
+sudo rm -rf -- \
+	/var/lib/waydroid \
+	/usr/lib/waydroid \
+	/usr/lib/steamos-waydroid \
+	/etc/waydroid-extra
 stage_complete remove-system-files
 
 if [[ "$KEEP_ANDROID_STATE" == true ]]; then
@@ -574,9 +602,18 @@ rm -f -- \
 	"$PROJECT_ROOT/extras/waydroid.img" \
 	"$PROJECT_ROOT/logfile"
 # Waydroid and its privileged helpers can leave root-owned files below these
-# user directories. Keep the targets explicit, but remove them as root.
-sudo rm -rf -- \
-	"$ANDROID_HOME"
+# user directories. Remove main integration and image files while explicitly
+# preserving the separately managed test directory.
+if [[ "$WAYDROID_TEST_HOME" != "$ANDROID_HOME/test" ]]; then
+	printf 'error: unsafe Waydroid Test directory resolution: %s\n' \
+		"$WAYDROID_TEST_HOME" >&2
+	exit 1
+fi
+if [[ -d "$ANDROID_HOME" ]]; then
+	sudo find "$ANDROID_HOME" -mindepth 1 -maxdepth 1 \
+		! -path "$WAYDROID_TEST_HOME" -exec rm -rf -- {} +
+	sudo rmdir "$ANDROID_HOME" 2>/dev/null || true
+fi
 if [[ "$KEEP_ANDROID_STATE" != true ]]; then
 	sudo rm -rf -- \
 		"$WAYDROID_LEGACY_USER_STATE" \

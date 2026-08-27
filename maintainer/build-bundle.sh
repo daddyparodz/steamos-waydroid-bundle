@@ -246,6 +246,12 @@ install -m 0755 \
 install -m 0644 \
 	"$DECK_RUNTIME_ROOT/lib/target-fingerprint.sh" \
 	"$STAGING_ROOT/tools/target-fingerprint.sh"
+install -m 0644 \
+	"$DECK_RUNTIME_ROOT/lib/kernel-capabilities.sh" \
+	"$STAGING_ROOT/tools/kernel-capabilities.sh"
+install -m 0644 \
+	"$DECK_RUNTIME_ROOT/lib/bundle-compatibility.sh" \
+	"$STAGING_ROOT/tools/bundle-compatibility.sh"
 
 patchelf --set-rpath '$ORIGIN/../lib' "$STAGING_ROOT/bin/cage"
 

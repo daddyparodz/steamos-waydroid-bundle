@@ -2,24 +2,56 @@
 
 set -Eeuo pipefail
 
-IMAGE=/home/deck/Android_Waydroid/waydroid.img
-PID_MAX_STATE=/home/deck/Android_Waydroid/orig_kernel.pid_max
+SHARED_FOLDER_LIB=/usr/lib/steamos-waydroid/shared-folder.sh
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -r "$SHARED_FOLDER_LIB" ] &&
+	[ -r "$SCRIPT_DIR/../../libexec/steamos-waydroid/shared-folder.sh" ]; then
+	SHARED_FOLDER_LIB="$SCRIPT_DIR/../../libexec/steamos-waydroid/shared-folder.sh"
+fi
+if [ -r "$SHARED_FOLDER_LIB" ]; then
+	# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
+	source "$SHARED_FOLDER_LIB"
+else
+	printf 'error: Waydroid shared-folder helper is missing: %s\n' "$SHARED_FOLDER_LIB" >&2
+	exit 1
+fi
 
-if [ -r "$PID_MAX_STATE" ]; then
-	saved_pid_max=$(cat "$PID_MAX_STATE")
-	if [[ "$saved_pid_max" =~ ^[0-9]+$ ]]; then
-		sysctl -w "kernel.pid_max=$saved_pid_max" || true
+waydroid_shutdown_main() {
+	local image pid_max_state saved_pid_max user_home
+
+	resolve_waydroid_profile "$@" || exit $?
+	image=$WAYDROID_IMAGE
+	pid_max_state="${WAYDROID_IMAGE%/*}/orig_kernel.pid_max"
+	user_home="$(waydroid_user_home)" || exit $?
+	export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
+
+	if [ -r "/run/steamos-waydroid/controller-hotplug-$WAYDROID_PROFILE/pid" ] &&
+		[ -x /usr/bin/waydroid-controller-hotplug ]; then
+		/usr/bin/waydroid-controller-hotplug --stop "$WAYDROID_PROFILE" || true
 	fi
-	rm -f "$PID_MAX_STATE"
+
+	if [ -r "$pid_max_state" ]; then
+		saved_pid_max=$(cat "$pid_max_state")
+		if [[ "$saved_pid_max" =~ ^[0-9]+$ ]]; then
+			sysctl -w "kernel.pid_max=$saved_pid_max" || true
+		fi
+		rm -f "$pid_max_state"
+	fi
+
+	systemctl stop waydroid-container.service || true
+	systemctl stop firewalld.service || true
+
+	unmount_waydroid_share "$user_home" "$WAYDROID_PROFILE"
+
+	if findmnt --mountpoint /var/lib/waydroid >/dev/null; then
+		umount /var/lib/waydroid || true
+	fi
+
+	while IFS=: read -r loop_device _; do
+		[ -n "$loop_device" ] && losetup -d "$loop_device" || true
+	done < <(losetup -j "$image")
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+	waydroid_shutdown_main "$@"
 fi
-
-systemctl stop waydroid-container.service || true
-systemctl stop firewalld.service || true
-
-if findmnt --mountpoint /var/lib/waydroid >/dev/null; then
-	umount /var/lib/waydroid || true
-fi
-
-while IFS=: read -r loop_device _; do
-	[ -n "$loop_device" ] && losetup -d "$loop_device" || true
-done < <(losetup -j "$IMAGE")

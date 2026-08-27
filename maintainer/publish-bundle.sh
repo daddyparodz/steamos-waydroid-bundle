@@ -100,6 +100,8 @@ cp "$STAGING_ROOT/$MANIFEST_NAME" "$STAGING_ROOT/$LATEST_MANIFEST_NAME"
 TARGET_ENVIRONMENT_ID="$(fingerprint_value \
 	"$BUNDLE_ROOT/target-fingerprint.env" TARGET_ENVIRONMENT_ID)"
 [[ -n "$TARGET_ENVIRONMENT_ID" ]] || die "bundle target environment ID is missing"
+ABI_SHA256="$(fingerprint_value "$BUNDLE_ROOT/target-fingerprint.env" ABI_SHA256)"
+[[ "$ABI_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "bundle ABI fingerprint is missing or invalid"
 
 CATALOG_ENTRIES="$STAGING_ROOT/targets.entries"
 
@@ -112,9 +114,13 @@ for candidate_manifest in "$PUBLISH_ROOT"/*.manifest; do
 	candidate_target="$(fingerprint_value \
 		"$candidate_manifest" TARGET_ENVIRONMENT_ID)"
 	candidate_version="$(fingerprint_value "$candidate_manifest" bundle_version)"
+	candidate_abi="$(fingerprint_value "$candidate_manifest" ABI_SHA256)"
 
 	if [[ -n "$candidate_target" && "$candidate_version" =~ ^[A-Za-z0-9._-]+$ ]]; then
-		printf '%s|%s\n' "$candidate_target" "$candidate_version" >>"$CATALOG_ENTRIES"
+		printf 'target|%s|%s\n' "$candidate_target" "$candidate_version" >>"$CATALOG_ENTRIES"
+		if [[ "$candidate_abi" =~ ^[0-9a-f]{64}$ ]]; then
+			printf 'abi|%s|%s\n' "$candidate_abi" "$candidate_version" >>"$CATALOG_ENTRIES"
+		fi
 	fi
 done
 
@@ -124,6 +130,15 @@ if [[ -r "$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME" ]]; then
 	existing_bundle="$(
 		awk -F '[=|]' -v target="$TARGET_ENVIRONMENT_ID" \
 			'$1 == "target" && $2 == target {print $3; exit}' \
+			"$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME"
+	)"
+fi
+
+existing_abi_bundle=""
+if [[ -r "$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME" ]]; then
+	existing_abi_bundle="$(
+		awk -F '[=|]' -v abi="$ABI_SHA256" \
+			'$1 == "abi" && $2 == abi {print $3; exit}' \
 			"$PUBLISH_ROOT/$TARGETS_MANIFEST_NAME"
 	)"
 fi
@@ -157,18 +172,28 @@ else
 	printf '  %s\n' "$BUNDLE_VERSION"
 fi
 
-printf '%s|%s\n' \
+if [[ -z "$existing_abi_bundle" || "$existing_abi_bundle" == "$BUNDLE_VERSION" ]] || $PROMOTE; then
+	preferred_abi_bundle="$BUNDLE_VERSION"
+else
+	preferred_abi_bundle="$existing_abi_bundle"
+fi
+
+printf 'target|%s|%s\n' \
 	"$TARGET_ENVIRONMENT_ID" \
 	"$preferred_bundle" \
 	>>"$CATALOG_ENTRIES"
+printf 'abi|%s|%s\n' \
+	"$ABI_SHA256" \
+	"$preferred_abi_bundle" \
+	>>"$CATALOG_ENTRIES"
 
 {
-	printf 'format=1\n'
+	printf 'format=2\n'
 	awk -F '|' \
-		'{selected[$1]=$2} END {for (target in selected) print target "|" selected[target]}' \
+		'{selected[$1 FS $2]=$3} END {for (key in selected) print key "|" selected[key]}' \
 		"$CATALOG_ENTRIES" |
 		sort |
-		sed 's/^/target=/'
+		sed 's/|/=/1'
 } >"$STAGING_ROOT/$TARGETS_MANIFEST_NAME"
 
 mv \

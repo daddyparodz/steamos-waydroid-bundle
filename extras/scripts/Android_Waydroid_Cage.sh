@@ -4,10 +4,39 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_BUNDLE_SELECTOR="$SCRIPT_DIR/select-bundle"
+PROFILE_LIB=/usr/lib/steamos-waydroid/waydroid-profile.sh
+if [ ! -r "$PROFILE_LIB" ] &&
+	[ -r "$SCRIPT_DIR/../../libexec/steamos-waydroid/waydroid-profile.sh" ]; then
+	PROFILE_LIB="$SCRIPT_DIR/../../libexec/steamos-waydroid/waydroid-profile.sh"
+fi
+if [ ! -r "$PROFILE_LIB" ]; then
+	kdialog --error "Waydroid profile helper is missing: $PROFILE_LIB
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the host integration."
+	exit 1
+fi
+# shellcheck source=../../libexec/steamos-waydroid/waydroid-profile.sh
+source "$PROFILE_LIB"
+
+REQUESTED_PROFILE=main
+if [ "${1:-}" = --profile ]; then
+	if [ -z "${2:-}" ]; then
+		printf 'usage: %s [--profile main|test] [PACKAGE]\n' "$0" >&2
+		exit 2
+	fi
+	REQUESTED_PROFILE=$2
+	shift 2
+fi
+if (($# > 1)); then
+	printf 'usage: %s [--profile main|test] [PACKAGE]\n' "$0" >&2
+	exit 2
+fi
+resolve_waydroid_profile "$REQUESTED_PROFILE" || exit $?
+export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
 
 if [ -x "$LOCAL_BUNDLE_SELECTOR" ] &&
 	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1); then
-	kdialog --error "No installed Cage bundle matches this SteamOS build.
+	kdialog --error "No installed Cage bundle is compatible with this SteamOS host.
 
 $SELECTOR_OUTPUT
 
@@ -47,7 +76,7 @@ if ! TARGET_CHECK_OUTPUT=$("$TARGET_CHECK" "${target_check_args[@]}" 2>&1); then
 		"$COMPATIBILITY_REPORT" "$BUNDLE" "$REPORT_FILE" || true
 	fi
 
-	kdialog --error "The Cage bundle does not match this SteamOS build.
+	kdialog --error "The Cage bundle is incompatible with this SteamOS host.
 
 $TARGET_CHECK_OUTPUT
 
@@ -72,13 +101,29 @@ if [ -z "$RESOLUTION" ] ||
 	exit 1
 fi
 
+SHARED_FOLDER_LIB="${STEAMOS_WAYDROID_SHARED_FOLDER_LIB:-/usr/lib/steamos-waydroid/shared-folder.sh}"
+if [ ! -r "$SHARED_FOLDER_LIB" ]; then
+	kdialog --error "Waydroid shared-folder helper is missing: $SHARED_FOLDER_LIB
+
+Run the SteamOS Waydroid installer in Desktop Mode to repair the host integration."
+	exit 1
+fi
+# shellcheck source=../../libexec/steamos-waydroid/shared-folder.sh
+source "$SHARED_FOLDER_LIB"
+if ! SHARE_OUTPUT=$(ensure_waydroid_share_source "$HOME" 2>&1); then
+	kdialog --error "Waydroid shared-folder setup failed.
+
+$SHARE_OUTPUT"
+	exit 1
+fi
+
 cleanup_required=false
 LAUNCH_ERROR_LOG="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-launch.XXXXXX")"
 
 cleanup() {
 	if [ "$cleanup_required" = true ]; then
 		cleanup_required=false
-		sudo /usr/bin/waydroid-shutdown-scripts || true
+		sudo /usr/bin/waydroid-shutdown-scripts "$WAYDROID_PROFILE" || true
 	fi
 	rm -f -- "$LAUNCH_ERROR_LOG"
 }
@@ -103,6 +148,18 @@ Run the SteamOS Waydroid installer in Desktop Mode to repair the reported proble
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 
+# Check profile ownership before stopping any existing user session. This
+# prevents a test launch from disrupting a running main environment (and vice
+# versa). waydroid-mount repeats the check immediately before mounting.
+if ! PROFILE_CHECK_OUTPUT=$(sudo /usr/bin/waydroid-mount "$WAYDROID_PROFILE" --check-only 2>&1); then
+	kdialog --error "Waydroid cannot switch profiles while another environment is active.
+
+$PROFILE_CHECK_OUTPUT
+
+Shut down Waydroid, then try again."
+	exit 1
+fi
+
 # A running Waydroid session remains bound to the Wayland compositor that
 # started it. Stop it gracefully before waydroid-mount stops the container, so
 # the session started below will bind to Cage instead of returning immediately
@@ -111,7 +168,7 @@ trap 'exit 130' HUP INT TERM
 
 # Mount persistent Android state before starting the container. From this point
 # onward, the EXIT trap owns cleanup, including launch failures and signals.
-if ! PREFLIGHT_OUTPUT=$(sudo /usr/bin/waydroid-mount 2>&1); then
+if ! PREFLIGHT_OUTPUT=$(sudo /usr/bin/waydroid-mount "$WAYDROID_PROFILE" 2>&1); then
 	kdialog --error "Waydroid preflight failed before Cage was started.
 
 $PREFLIGHT_OUTPUT
@@ -149,6 +206,7 @@ if [ -z "${1:-}" ]; then
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
+		readonly WAYDROID_PROFILE="$4"
 
 		"$WLR_RANDR" \
 			--output X11-1 \
@@ -156,7 +214,14 @@ if [ -z "${1:-}" ]; then
 
 		/usr/bin/waydroid show-full-ui &
 		readonly WAYDROID_SESSION_PID=$!
-		sleep 10
+
+		if ! sudo /usr/bin/waydroid-startup-scripts "$WAYDROID_PROFILE"; then
+			jobs -pr | while IFS= read -r child_pid; do
+				kill "$child_pid" 2>/dev/null || true
+			done
+			wait 2>/dev/null || true
+			exit 1
+		fi
 
 		waydroid prop set \
 			persist.waydroid.fake_wifi \
@@ -166,16 +231,8 @@ if [ -z "${1:-}" ]; then
 			persist.waydroid.fake_touch \
 			"$(cat "$CONFIG_DIR/fake_touch")"
 
-		if ! sudo /usr/bin/waydroid-startup-scripts; then
-			jobs -pr | while IFS= read -r child_pid; do
-				kill "$child_pid" 2>/dev/null || true
-			done
-			wait 2>/dev/null || true
-			exit 1
-		fi
-
 		wait "$WAYDROID_SESSION_PID"
-	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" \
+	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$WAYDROID_PROFILE" \
 		>"$LAUNCH_ERROR_LOG" 2>&1; then
 		:
 	else
@@ -193,6 +250,7 @@ else
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
 		readonly PACKAGE="$4"
+		readonly WAYDROID_PROFILE="$5"
 
 		"$WLR_RANDR" \
 			--output X11-1 \
@@ -200,7 +258,14 @@ else
 
 		/usr/bin/waydroid session start &
 		readonly WAYDROID_SESSION_PID=$!
-		sleep 10
+
+		if ! sudo /usr/bin/waydroid-startup-scripts "$WAYDROID_PROFILE"; then
+			jobs -pr | while IFS= read -r child_pid; do
+				kill "$child_pid" 2>/dev/null || true
+			done
+			wait 2>/dev/null || true
+			exit 1
+		fi
 
 		waydroid prop set \
 			persist.waydroid.fake_wifi \
@@ -209,14 +274,6 @@ else
 		waydroid prop set \
 			persist.waydroid.fake_touch \
 			"$(cat "$CONFIG_DIR/fake_touch")"
-
-		if ! sudo /usr/bin/waydroid-startup-scripts; then
-			jobs -pr | while IFS= read -r child_pid; do
-				kill "$child_pid" 2>/dev/null || true
-			done
-			wait 2>/dev/null || true
-			exit 1
-		fi
 		sleep 1
 
 		/usr/bin/waydroid app launch "$PACKAGE" &
@@ -224,7 +281,7 @@ else
 
 		/usr/bin/waydroid show-full-ui &
 		wait "$WAYDROID_SESSION_PID"
-	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$PACKAGE" \
+	' bash "$WLR_RANDR" "$RESOLUTION" "$CONFIG_DIR" "$PACKAGE" "$WAYDROID_PROFILE" \
 		>"$LAUNCH_ERROR_LOG" 2>&1; then
 		:
 	else

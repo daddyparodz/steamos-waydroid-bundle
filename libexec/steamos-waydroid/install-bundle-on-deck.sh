@@ -35,6 +35,8 @@ source "$CONFIG_FILE"
 
 # shellcheck source=lib/target-fingerprint.sh
 source "$SCRIPT_DIR/lib/target-fingerprint.sh"
+# shellcheck source=lib/kernel-capabilities.sh
+source "$SCRIPT_DIR/lib/kernel-capabilities.sh"
 
 ARTIFACT_SOURCE="${ARTIFACT_SOURCE:-}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-}"
@@ -107,16 +109,28 @@ manifest_value() {
 }
 
 if [[ "$BUNDLE_VERSION" == auto ]]; then
-	printf 'Resolving the published bundle for this exact SteamOS target...\n'
+	printf 'Resolving the published bundle for this SteamOS target...\n'
 	CURRENT_FINGERPRINT="$DOWNLOAD_ROOT/current-target-fingerprint.env"
 	collect_target_fingerprint "$CURRENT_FINGERPRINT"
 	CURRENT_TARGET_ENVIRONMENT="$(fingerprint_value \
 		"$CURRENT_FINGERPRINT" TARGET_ENVIRONMENT_ID)"
+	CURRENT_ABI="$(fingerprint_value "$CURRENT_FINGERPRINT" ABI_SHA256)"
 	BUNDLE_VERSION=""
 	if fetch_file targets.manifest; then
 		BUNDLE_VERSION="$(awk -F '[=|]' -v wanted="$CURRENT_TARGET_ENVIRONMENT" \
 			'$1 == "target" && $2 == wanted {print $3; exit}' \
 			"$DOWNLOAD_ROOT/targets.manifest")"
+		if [[ -n "$BUNDLE_VERSION" ]]; then
+			printf 'Exact bundle match found in the catalog.\n'
+		elif running_kernel_has_builtin_binder; then
+			BUNDLE_VERSION="$(awk -F '[=|]' -v wanted="$CURRENT_ABI" \
+				'$1 == "abi" && $2 == wanted {print $3; exit}' \
+				"$DOWNLOAD_ROOT/targets.manifest")"
+			if [[ -n "$BUNDLE_VERSION" ]]; then
+				printf 'ABI-compatible bundle match found in the catalog.\n'
+				printf 'Userspace ABI matches and the running kernel provides Binder.\n'
+			fi
+		fi
 	else
 		printf 'Target catalog is not published yet; checking the legacy latest pointer.\n' >&2
 		if fetch_file latest.manifest; then
@@ -125,13 +139,18 @@ if [[ "$BUNDLE_VERSION" == auto ]]; then
 			if [[ "$latest_target" == "$CURRENT_TARGET_ENVIRONMENT" ]]; then
 				BUNDLE_VERSION="$(manifest_value \
 					"$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+			elif running_kernel_has_builtin_binder &&
+				[[ "$(fingerprint_value "$DOWNLOAD_ROOT/latest.manifest" ABI_SHA256)" == "$CURRENT_ABI" ]]; then
+				BUNDLE_VERSION="$(manifest_value \
+					"$DOWNLOAD_ROOT/latest.manifest" bundle_version)"
+				printf 'Using ABI-compatible bundle from the legacy latest pointer.\n'
 			fi
 		else
 			die "bundle catalog is unavailable or has not been published"
 		fi
 	fi
 	[[ -n "$BUNDLE_VERSION" ]] ||
-		die "no published bundle matches target $CURRENT_TARGET_ENVIRONMENT"
+		die "no compatible bundle is published for target $CURRENT_TARGET_ENVIRONMENT"
 fi
 [[ "$BUNDLE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe BUNDLE_VERSION"
 
@@ -185,6 +204,10 @@ printf 'Verifying the bundle against this SteamOS host...\n'
 "$SCRIPT_DIR/verify-bundle.sh" "$TARGET_ROOT"
 [[ -f "$TARGET_ROOT/.verified" ]] || die "artifact has no build verification marker"
 target_check_arguments=("$TARGET_ROOT")
+if ! target_state="$($TARGET_ROOT/tools/check-bundle-target.sh \
+	"$TARGET_ROOT" --compatibility-state 2>/dev/null)"; then
+	target_state=incompatible
+fi
 if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then
 	target_check_arguments+=(--allow-target-mismatch)
 fi
@@ -199,7 +222,7 @@ if ! target_check_output=$(
 fi
 printf '%s\n' "$target_check_output"
 
-if [[ "$ALLOW_TARGET_MISMATCH" == true ]]; then
+if [[ "$ALLOW_TARGET_MISMATCH" == true && "$target_state" == incompatible ]]; then
 	printf '%s\n' "$BUNDLE_VERSION" >"$TARGET_MISMATCH_ALLOW_FILE"
 else
 	rm -f -- "$TARGET_MISMATCH_ALLOW_FILE"

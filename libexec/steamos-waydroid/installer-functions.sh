@@ -54,7 +54,7 @@ Existing Android state was found:
 EOF
 	for existing_path in \
 		"$WAYDROID_IMAGE" \
-		"$HOME/.local/share/waydroid" \
+		"$WAYDROID_USER_STATE" \
 		"$HOME/waydroid"; do
 		if [ -e "$existing_path" ] || [ -L "$existing_path" ]; then
 			printf '  %s\n' "$existing_path"
@@ -90,6 +90,62 @@ detach_android_image() {
 
 waydroid_mounts_are_active() {
 	findmnt -rn -o TARGET | grep -Eq '^/var/lib/waydroid(/|$)'
+}
+
+test_environment_install_allowed() {
+	if [[ "${WAYDROID_PROFILE:-}" != test ]]; then
+		printf 'error: test-environment installation requires the test profile\n' >&2
+		return 1
+	fi
+	if [[ -e "$WAYDROID_IMAGE" || -L "$WAYDROID_IMAGE" ]]; then
+		printf 'Waydroid Test is already installed.\n' >&2
+		return 1
+	fi
+	if [[ -e "$WAYDROID_USER_STATE" || -L "$WAYDROID_USER_STATE" ]]; then
+		printf 'error: Waydroid Test user state already exists without its image: %s\n' \
+			"$WAYDROID_USER_STATE" >&2
+		printf 'Refusing to overwrite or remove existing test data.\n' >&2
+		return 1
+	fi
+}
+
+ensure_waydroid_runtime_inactive_for_test_operation() {
+	local operation=${1:-using Waydroid Test}
+
+	if systemctl is-active --quiet waydroid-container.service; then
+		printf 'error: Waydroid is currently active; shut it down before %s\n' "$operation" >&2
+		return 1
+	fi
+	if waydroid_mounts_are_active; then
+		printf 'error: /var/lib/waydroid is already mounted; shut down Waydroid before %s\n' "$operation" >&2
+		return 1
+	fi
+	if pgrep -x waydroid >/dev/null 2>&1 ||
+		pgrep -x waydroid-container >/dev/null 2>&1; then
+		printf 'error: a Waydroid process is still running; shut down Waydroid before %s\n' "$operation" >&2
+		return 1
+	fi
+}
+
+ensure_waydroid_runtime_inactive_for_test_install() {
+	ensure_waydroid_runtime_inactive_for_test_operation "installing Waydroid Test"
+}
+
+commit_new_android_image() {
+	local staged_image=$1
+
+	[[ -f "$staged_image" && ! -L "$staged_image" ]] || {
+		printf 'error: completed Android image is missing or unsafe: %s\n' \
+			"$staged_image" >&2
+		return 1
+	}
+	[[ ! -e "$WAYDROID_IMAGE" && ! -L "$WAYDROID_IMAGE" ]] || {
+		printf 'error: refusing to overwrite the profile image: %s\n' \
+			"$WAYDROID_IMAGE" >&2
+		return 1
+	}
+	mkdir -p -- "${WAYDROID_IMAGE%/*}" || return 1
+	mv -- "$staged_image" "$WAYDROID_IMAGE"
 }
 
 verify_pacman_transaction_dependencies() {
@@ -240,10 +296,10 @@ archive_existing_android_state() {
 	# shellcheck disable=SC2034
 	ANDROID_REINSTALL_TIMESTAMP=$timestamp
 	ARCHIVED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.pre-reinstall-$timestamp"
-	ARCHIVED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.pre-reinstall-$timestamp"
+	ARCHIVED_ANDROID_USER_STATE="$WAYDROID_USER_STATE.pre-reinstall-$timestamp"
 	ARCHIVED_ANDROID_LEGACY_USER_STATE="$HOME/waydroid.pre-reinstall-$timestamp"
 	FAILED_ANDROID_IMAGE="$ANDROID_HOME/waydroid.img.failed-reinstall-$timestamp"
-	FAILED_ANDROID_USER_STATE="$HOME/.local/share/waydroid.failed-reinstall-$timestamp"
+	FAILED_ANDROID_USER_STATE="$WAYDROID_USER_STATE.failed-reinstall-$timestamp"
 	FAILED_ANDROID_LEGACY_USER_STATE="$HOME/waydroid.failed-reinstall-$timestamp"
 
 	for archive_path in \
@@ -264,11 +320,11 @@ archive_existing_android_state() {
 			return 1
 		fi
 	fi
-	for source_path in "$HOME/.local/share/waydroid" "$HOME/waydroid"; do
+	for source_path in "$WAYDROID_USER_STATE" "$HOME/waydroid"; do
 		if [ ! -e "$source_path" ] && [ ! -L "$source_path" ]; then
 			continue
 		fi
-		if [ "$source_path" = "$HOME/.local/share/waydroid" ]; then
+		if [ "$source_path" = "$WAYDROID_USER_STATE" ]; then
 			archive_path=$ARCHIVED_ANDROID_USER_STATE
 		else
 			archive_path=$ARCHIVED_ANDROID_LEGACY_USER_STATE
@@ -317,8 +373,8 @@ restore_archived_android_state_after_failure() {
 			sudo mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || restore_failed=true
 		fi
 		if { [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]; } &&
-			[ ! -e "$HOME/.local/share/waydroid" ] && [ ! -L "$HOME/.local/share/waydroid" ]; then
-			sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$HOME/.local/share/waydroid" || restore_failed=true
+			[ ! -e "$WAYDROID_USER_STATE" ] && [ ! -L "$WAYDROID_USER_STATE" ]; then
+			sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$WAYDROID_USER_STATE" || restore_failed=true
 		fi
 		if { [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]; } &&
 			[ ! -e "$HOME/waydroid" ] && [ ! -L "$HOME/waydroid" ]; then
@@ -351,7 +407,7 @@ restore_archived_android_state_after_failure() {
 	if ! move_failed_android_state_aside "$WAYDROID_IMAGE" "$FAILED_ANDROID_IMAGE"; then
 		restore_failed=true
 	fi
-	if ! move_failed_android_state_aside "$HOME/.local/share/waydroid" "$FAILED_ANDROID_USER_STATE"; then
+	if ! move_failed_android_state_aside "$WAYDROID_USER_STATE" "$FAILED_ANDROID_USER_STATE"; then
 		restore_failed=true
 	fi
 	if ! move_failed_android_state_aside "$HOME/waydroid" "$FAILED_ANDROID_LEGACY_USER_STATE"; then
@@ -362,12 +418,12 @@ restore_archived_android_state_after_failure() {
 		return 1
 	fi
 
-	mkdir -p -- "$ANDROID_HOME" "$HOME/.local/share"
+	mkdir -p -- "$ANDROID_HOME" "${WAYDROID_USER_STATE%/*}"
 	if [ -f "$ARCHIVED_ANDROID_IMAGE" ]; then
 		sudo mv -- "$ARCHIVED_ANDROID_IMAGE" "$WAYDROID_IMAGE" || restore_failed=true
 	fi
 	if [ -e "$ARCHIVED_ANDROID_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_USER_STATE" ]; then
-		sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$HOME/.local/share/waydroid" || restore_failed=true
+		sudo mv -- "$ARCHIVED_ANDROID_USER_STATE" "$WAYDROID_USER_STATE" || restore_failed=true
 	fi
 	if [ -e "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ] || [ -L "$ARCHIVED_ANDROID_LEGACY_USER_STATE" ]; then
 		sudo mv -- "$ARCHIVED_ANDROID_LEGACY_USER_STATE" "$HOME/waydroid" || restore_failed=true
@@ -385,13 +441,19 @@ restore_archived_android_state_after_failure() {
 }
 
 mount_waydroid_var() {
+	local loop_device
+
 	# this will initialize and configure custom /var/lib/waydroid
 	# first make sure /var/lib/waydroid is not mounted
 	# current_password is supplied by steamos-waydroid-installer.sh.
 	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S umount /var/lib/waydroid &>/dev/null
-	# shellcheck disable=SC2154
-	echo -e "$current_password\n" | sudo -S losetup -d "$(losetup | grep waydroid.img | cut -d ' ' -f1)" &>/dev/null
+	while IFS=: read -r loop_device _; do
+		if [[ "$loop_device" == /dev/loop* ]]; then
+			# shellcheck disable=SC2154
+			echo -e "$current_password\n" | sudo -S losetup -d "$loop_device" &>/dev/null || true
+		fi
+	done < <(sudo losetup -j "$WORKING_DIR/extras/waydroid.img" 2>/dev/null)
 
 	# prepare the custom /var/lib/waydroid
 	# shellcheck disable=SC2154
@@ -414,8 +476,36 @@ unmount_waydroid_var() {
 			fi
 		done < <(echo -e "$current_password\n" | sudo -S losetup -j "$image_path" 2>/dev/null)
 	else
-		echo -e "$current_password\n" | sudo -S losetup -d "$(losetup | grep waydroid.img | cut -d ' ' -f1)" &>/dev/null
+		image_path="$WORKING_DIR/extras/waydroid.img"
+		while IFS=: read -r loop_device _; do
+			if [[ "$loop_device" == /dev/loop* ]]; then
+				echo -e "$current_password\n" | sudo -S losetup -d "$loop_device" &>/dev/null || true
+			fi
+		done < <(echo -e "$current_password\n" | sudo -S losetup -j "$image_path" 2>/dev/null)
 	fi
+}
+
+cleanup_failed_test_environment() {
+	[[ "${TEST_INSTALL_CLEANUP_DONE:-false}" != true ]] || return 0
+	if [[ "${WAYDROID_PROFILE:-}" != test ]]; then
+		printf 'error: refusing test cleanup outside the test profile\n' >&2
+		return 1
+	fi
+	TEST_INSTALL_CLEANUP_DONE=true
+
+	printf 'Cleaning up the incomplete Waydroid Test installation.\n' >&2
+	printf '%s\n' "$current_password" |
+		sudo -S systemctl stop waydroid-container.service &>/dev/null || true
+	unmount_waydroid_var "$WORKING_DIR/extras/waydroid.img"
+	printf '%s\n' "$current_password" |
+		sudo -S rm -f -- "$WORKING_DIR/extras/waydroid.img" &>/dev/null || true
+	printf '%s\n' "$current_password" |
+		sudo -S rm -rf -- "$WAYDROID_XDG_DATA_HOME" "${WAYDROID_IMAGE%/*}" &>/dev/null || true
+	printf '%s\n' "$current_password" |
+		sudo -S steamos-readonly enable &>/dev/null || true
+	restore_decky_loader || true
+	printf 'The normal Waydroid image and user data were not modified.\n' >&2
+	printf 'Test installation diagnostics remain at: %s\n' "$LOGFILE" >&2
 }
 
 cleanup_exit() {
@@ -493,6 +583,8 @@ cleanup_exit() {
 	# delete the waydroid directories
 	# shellcheck disable=SC2154
 	echo -e "$current_password\n" | sudo -S rm -rf /var/lib/waydroid &>/dev/null
+	# shellcheck disable=SC2154
+	echo -e "$current_password\n" | sudo -S rm -rf /usr/lib/steamos-waydroid &>/dev/null
 
 	# delete waydroid config and scripts
 	# shellcheck disable=SC2154
@@ -516,23 +608,26 @@ cleanup_exit() {
 	exit 1
 }
 
-# apply custom config for controller detection, root and fingerprint spoof
+# Apply the version-independent controller/root properties, then only the
+# fingerprint spoof which is known to match the selected Android 13 image.
 apply_android_custom_config() {
 
 	# waydroid_base.prop - controller config and disable root
 	echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 	cat extras/props/waydroid_base.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 
-	# waydroid_base.prop fingerprint spoof - check if A11 or A13 and apply the spoof accordingly
+	# waydroid_base.prop fingerprint spoof
 	# shellcheck disable=SC2154
 	if [ "$Android_Choice" == "A13_NO_GAPPS" ] || [ "$Android_Choice" == "A13_GAPPS" ]; then
 		echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 		cat extras/props/android_spoof.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
-	else
-		[ "$Android_Choice" == "TV13_NO_GAPPS" ] || [ "$Android_Choice" == "TV13_GAPPS" ]
+	elif [ "$Android_Choice" == "TV13_NO_GAPPS" ] || [ "$Android_Choice" == "TV13_GAPPS" ]; then
 		echo TV13.
 		echo "" | sudo tee -a /var/lib/waydroid/waydroid_base.prop >/dev/null
 		cat extras/props/androidtv_spoof.prop | sudo tee -a /var/lib/waydroid/waydroid_base.prop
+	else
+		printf 'Skipping the Android-13-specific fingerprint spoof for Android %s.\n' \
+			"${ANDROID_VERSION:-unknown}"
 	fi
 }
 
@@ -561,7 +656,7 @@ install_android_extras() {
 	echo "*** install $ARM_Choice and Widevine ***" >>"$LOGFILE"
 	# shellcheck disable=SC2154
 	if ! { printf '%s\n' "$current_password" |
-		sudo -S "$WAYDROID_SCRIPT_DIR"/venv/bin/python3 \
+		run_profile_sudo "$WAYDROID_SCRIPT_DIR"/venv/bin/python3 \
 			"$WAYDROID_SCRIPT_DIR"/main.py -a13 install "$ARM_Choice" widevine; } \
 		>>"$LOGFILE" 2>&1; then
 		echo "Error: $ARM_Choice or Widevine installation failed." >&2
@@ -594,6 +689,6 @@ check_waydroid_init() {
 		echo Output of which python - "$(which python)"
 		echo Output of python version - "$(python -V)"
 
-		cleanup_exit
+		abort_run
 	fi
 }

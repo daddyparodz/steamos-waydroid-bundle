@@ -39,7 +39,7 @@ run_nonprivileged_sanity_checks() {
 	main)
 		if ! zenity --question \
 			--title "SteamOS Waydroid Installer" \
-			--text "WARNING: SteamOS main branch detected.\n\nThe installer is validated for the stable and beta branches. A compatible target bundle must still be published for this exact userspace.\n\nContinue?" \
+			--text "WARNING: SteamOS main branch detected.\n\nThe installer is validated for the stable and beta branches. A compatible target bundle must still be published for this userspace.\n\nContinue?" \
 			--width 650 --height 75 >/dev/null 2>&1; then
 			sanity_fail "installation cancelled on the SteamOS main branch"
 			return 1
@@ -86,8 +86,8 @@ privileged SteamOS changes have been made and the Android image was not touched.
 
 You can wait for a compatible bundle and run the installer again, return to a
 previously supported SteamOS deployment, or build and publish a target bundle
-using the maintainer procedure. A mismatched bundle should only be used for a
-deliberate compatibility test.
+using the maintainer procedure. The explicit target-mismatch override remains
+intended only for a deliberate compatibility test.
 EOF
 	return 1
 }

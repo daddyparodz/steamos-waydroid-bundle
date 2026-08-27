@@ -14,11 +14,17 @@ RESET_HOST_KEEP_ANDROID_MODE=false
 REINSTALL_ANDROID_MODE=false
 AUTO_REPAIR_MODE=false
 ANDROID_REINSTALL_HAS_EXISTING=false
+TEST_INSTALL_MODE=false
+REMOVE_TEST_MODE=false
+TEST_INSTALL_COMMITTED=false
+TEST_INSTALL_CLEANUP_DONE=false
 usage() {
 	echo "Usage: $0 [OPTION]" >&2
 	echo "Options:" >&2
 	echo "  --repair                   Repairs the current installation of Waydroid." >&2
 	echo "  --reinstall-android        Reinstalls the Android system on Waydroid." >&2
+	echo "  --install-test             Installs a separate experimental Waydroid Test environment." >&2
+	echo "  --remove-test              Removes the separate Waydroid Test Android environment." >&2
 	echo "  --configure-artifacts      Configures additional artifacts for selecting a bundle." >&2
 	echo "  --uninstall                Uninstalls Waydroid from SteamOS." >&2
 	echo "  --purge-android            Purges all Android data and configurations." >&2
@@ -33,6 +39,8 @@ case "${1:-}" in
 "") ;;
 --repair) REPAIR_MODE=true ;;
 --reinstall-android) REINSTALL_ANDROID_MODE=true ;;
+--install-test) TEST_INSTALL_MODE=true ;;
+--remove-test) REMOVE_TEST_MODE=true ;;
 --configure-artifacts) CONFIGURE_ARTIFACTS=true ;;
 --uninstall) UNINSTALL_MODE=true ;;
 --purge-android) PURGE_ANDROID_MODE=true ;;
@@ -43,6 +51,10 @@ case "${1:-}" in
 	exit 1
 	;;
 esac
+
+if [ "$REMOVE_TEST_MODE" = true ]; then
+	exec "$SCRIPT_DIR/libexec/steamos-waydroid/remove-test-environment.sh"
+fi
 
 clear
 
@@ -78,17 +90,29 @@ WORKING_DIR=$SCRIPT_DIR
 DECK_CONFIG_FILE=${DECK_CONFIG_FILE:-$WORKING_DIR/.deck-config.env}
 DECK_RUNTIME=$WORKING_DIR/libexec/steamos-waydroid
 ARTIFACT_CONFIGURATOR=$DECK_RUNTIME/configure-artifacts.sh
-ANDROID_HOME=$HOME/Android_Waydroid
-WAYDROID_IMAGE=$ANDROID_HOME/waydroid.img
-WAYDROID_USER_STATE=$HOME/.local/share/waydroid
+# shellcheck source=libexec/steamos-waydroid/waydroid-profile.sh
+source "$DECK_RUNTIME/waydroid-profile.sh"
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	resolve_waydroid_profile test || exit $?
+	export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
+else
+	resolve_waydroid_profile main || exit $?
+fi
+ANDROID_HOME=${WAYDROID_IMAGE%/*}
 WAYDROID_LEGACY_USER_STATE=$HOME/waydroid
 FIREWALL_OWNERSHIP_FILE=$HOME/.local/share/steamos-waydroid-installer/firewall-ownership.env
 # shellcheck source=libexec/steamos-waydroid/installer-functions.sh
 source "$DECK_RUNTIME/installer-functions.sh"
+# shellcheck source=libexec/steamos-waydroid/android-image-sources.sh
+source "$DECK_RUNTIME/android-image-sources.sh"
 # shellcheck source=libexec/steamos-waydroid/installer-sanity-checks.sh
 source "$DECK_RUNTIME/installer-sanity-checks.sh"
 # shellcheck source=libexec/steamos-waydroid/firewall-rules.sh
 source "$DECK_RUNTIME/firewall-rules.sh"
+# shellcheck source=libexec/steamos-waydroid/lib/kernel-capabilities.sh
+source "$DECK_RUNTIME/lib/kernel-capabilities.sh"
+# shellcheck source=libexec/steamos-waydroid/shared-folder.sh
+source "$DECK_RUNTIME/shared-folder.sh"
 if [ "$FULL_UNINSTALL_MODE" = true ]; then
 	STEAMOS_WAYDROID_INTERNAL=1 \
 		"$DECK_RUNTIME/uninstall.sh" --full-process
@@ -113,15 +137,24 @@ elif [ "$CONFIGURE_ARTIFACTS" = true ]; then
 	exit 0
 fi
 
-# A persistent Android image is authoritative installation state. A normal run
-# repairs the host around it; Android replacement requires an explicit option.
-if [ "$REPAIR_MODE" != true ] && [ "$REINSTALL_ANDROID_MODE" != true ] &&
+# Test installation is deliberately independent from main repair/reinstall
+# detection. Existing test state is never archived or replaced in stage 2.
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	test_environment_install_allowed || exit 1
+	ensure_waydroid_runtime_inactive_for_test_install || exit 1
+fi
+
+# A main persistent Android image is authoritative installation state. A normal
+# run repairs the host around it; Android replacement requires an explicit option.
+if [ "$TEST_INSTALL_MODE" != true ] &&
+	[ "$REPAIR_MODE" != true ] && [ "$REINSTALL_ANDROID_MODE" != true ] &&
 	{ [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; }; then
 	REPAIR_MODE=true
 	AUTO_REPAIR_MODE=true
 fi
 
-if [ "$REPAIR_MODE" != true ] && [ "$REINSTALL_ANDROID_MODE" != true ] &&
+if [ "$TEST_INSTALL_MODE" != true ] &&
+	[ "$REPAIR_MODE" != true ] && [ "$REINSTALL_ANDROID_MODE" != true ] &&
 	[ ! -e "$WAYDROID_IMAGE" ] && [ ! -L "$WAYDROID_IMAGE" ] &&
 	{ [ -e "$WAYDROID_USER_STATE" ] || [ -L "$WAYDROID_USER_STATE" ] ||
 		[ -e "$WAYDROID_LEGACY_USER_STATE" ] || [ -L "$WAYDROID_LEGACY_USER_STATE" ]; }; then
@@ -165,7 +198,11 @@ if [ ! -f "$DECK_CONFIG_FILE" ]; then
 		exit 1
 	fi
 fi
-LOGFILE=$WORKING_DIR/logfile
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	LOGFILE=$WORKING_DIR/logfile-test
+else
+	LOGFILE=$WORKING_DIR/logfile
+fi
 WAYDROID_SCRIPT=https://github.com/casualsnek/waydroid_script.git
 WAYDROID_SCRIPT_DIR=$(mktemp -d)/waydroid_script
 ARM_Choice=libhoudini
@@ -189,11 +226,19 @@ elif [ "$REINSTALL_ANDROID_MODE" = true ]; then
 	else
 		printf 'Mode: install Android; no previous persistent image was found.\n'
 	fi
+elif [ "$TEST_INSTALL_MODE" = true ]; then
+	printf 'Mode: install separate Waydroid Test environment\n'
 fi
 
-# Select an already-installed exact target bundle, or fetch the matching
+# Select an already-installed compatible target bundle, or fetch the matching
 # published artifact, before this installer performs privileged integration.
 if ! ensure_sanity_bundle; then
+	exit 1
+fi
+
+# This runs as the normal SteamOS user. Existing contents, ownership, and
+# permissions are deliberately left untouched.
+if ! ensure_waydroid_share_source "$HOME"; then
 	exit 1
 fi
 
@@ -237,11 +282,35 @@ if ! "$BUNDLE_TARGET_CHECK" "${target_check_args[@]}"; then
 fi
 
 abort_run() {
+	if [ "$TEST_INSTALL_MODE" = true ]; then
+		cleanup_failed_test_environment
+		exit 1
+	fi
 	if [ "$REPAIR_MODE" = true ]; then
 		echo Repair failed. Persistent Android data has not been removed. >&2
 		exit 1
 	fi
 	cleanup_exit
+}
+
+run_profile_sudo() {
+	if [ "$TEST_INSTALL_MODE" = true ]; then
+		sudo -S env "XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME" "$@"
+	else
+		sudo -S "$@"
+	fi
+}
+
+test_install_exit_cleanup() {
+	local exit_status=$?
+
+	trap - EXIT
+	if [ "$TEST_INSTALL_COMMITTED" != true ]; then
+		cleanup_failed_test_environment
+	else
+		restore_decky_loader || true
+	fi
+	return "$exit_status"
 }
 
 reinstall_exit_cleanup() {
@@ -296,6 +365,8 @@ wait_for_new_shortcut() {
 }
 
 ensure_game_mode_shortcuts() {
+	local main_image selected_profile test_image test_launcher
+
 	echo "Checking Game Mode shortcuts..."
 	logged_in_user=$(whoami)
 	logged_in_home=$(eval echo "~$logged_in_user")
@@ -307,8 +378,15 @@ ensure_game_mode_shortcuts() {
 		cp -a "$WORKING_DIR/extras/icons/." \
 			"${logged_in_home}/Android_Waydroid/icons/"
 	fi
+	selected_profile=$WAYDROID_PROFILE
+	resolve_waydroid_profile main || return 1
+	main_image=$WAYDROID_IMAGE
+	resolve_waydroid_profile test || return 1
+	test_image=$WAYDROID_IMAGE
+	resolve_waydroid_profile "$selected_profile" || return 1
+	test_launcher="${logged_in_home}/Android_Waydroid/Android_Waydroid_Test_Cage.sh"
 
-	if shortcut_should_be_created waydroid Waydroid; then
+	if [ -f "$main_image" ] && shortcut_should_be_created waydroid Waydroid; then
 		if [ ! -f "$launcher_script" ]; then
 			echo "Error: Launcher script '$launcher_script' not found." >&2
 		else
@@ -343,6 +421,41 @@ EOF
 		fi
 	fi
 
+	if [ -f "$test_image" ] && shortcut_should_be_created waydroid-test "Waydroid Test"; then
+		if [ ! -f "$test_launcher" ]; then
+			echo "Error: Test launcher script '$test_launcher' not found." >&2
+		else
+			chmod +x "$test_launcher"
+			TMP_TEST_DESKTOP="/tmp/waydroid-test-temp.desktop"
+			cat >"$TMP_TEST_DESKTOP" <<EOF
+[Desktop Entry]
+Name=Waydroid Test
+Exec=${test_launcher}
+Path=${logged_in_home}/Android_Waydroid
+Type=Application
+Terminal=false
+Icon=${logged_in_home}/Android_Waydroid/icons/waydroid-test/icon.png
+EOF
+			chmod +x "$TMP_TEST_DESKTOP"
+			if steamos-add-to-steam "$TMP_TEST_DESKTOP"; then
+				if wait_for_new_shortcut waydroid-test "$SHORTCUT_MATCH_COUNT"; then
+					shortcut_reconcile_args=(
+						reconcile waydroid-test
+						--artwork-dir "$WORKING_DIR/extras/icons/waydroid-test"
+					)
+					shortcut_reconcile_args+=(--keep-duplicates)
+					python3 "$WORKING_DIR/extras/icon.py" "${shortcut_reconcile_args[@]}" ||
+						echo "Warning: Waydroid Test artwork could not be installed." >&2
+				else
+					echo "Warning: Steam did not create the Waydroid Test shortcut within 45 seconds." >&2
+				fi
+			else
+				echo "Warning: Waydroid Test shortcut could not be created." >&2
+			fi
+			rm -f "$TMP_TEST_DESKTOP"
+		fi
+	fi
+
 	if shortcut_should_be_created nested-desktop "Nested Desktop"; then
 		if steamos-add-to-steam /usr/bin/steamos-nested-desktop &>/dev/null; then
 			if wait_for_new_shortcut nested-desktop "$SHORTCUT_MATCH_COUNT"; then
@@ -369,6 +482,12 @@ fi
 if [ "${DECKY_LOADER_STOPPED:-false}" = true ]; then
 	trap restore_decky_loader EXIT
 	trap 'exit 130' HUP INT TERM
+fi
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	trap test_install_exit_cleanup EXIT
+	trap 'exit 130' HUP INT TERM
+	# Close the race between the early read-only check and privileged work.
+	ensure_waydroid_runtime_inactive_for_test_install || exit 1
 fi
 
 # sanity checks are all good. lets go!
@@ -431,21 +550,6 @@ fi
 # SteamOS targets with Binder built into the kernel do not carry a Binder
 # package. Targets without Binder carry exactly one steamos-waydroid-binder
 # package containing the binder_linux module built for that target kernel.
-running_kernel_has_builtin_binder() {
-	local binder_module binder_filename modules_builtin
-
-	for binder_module in binder_linux binder; do
-		binder_filename="$(modinfo -k "$(uname -r)" -F filename "$binder_module" 2>/dev/null || true)"
-		if [ "$binder_filename" = "(builtin)" ]; then
-			return 0
-		fi
-	done
-
-	modules_builtin="/usr/lib/modules/$(uname -r)/modules.builtin"
-	[ -r "$modules_builtin" ] &&
-		grep -Eq '(^|/)(binder|binder_linux)\.ko$' "$modules_builtin"
-}
-
 echo Installing waydroid packages. This can take a while.
 echo "*** pacman install waydroid packages ***" >>"$LOGFILE"
 cd "$WORKING_DIR" || abort_run
@@ -549,9 +653,15 @@ mkdir -p ~/Android_Waydroid/config &>/dev/null
 # waydroid startup and shutdown scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-startup-scripts /usr/bin/waydroid-startup-scripts
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-shutdown-scripts /usr/bin/waydroid-shutdown-scripts
+echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-controller-hotplug /usr/bin/waydroid-controller-hotplug
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-mount /usr/bin/waydroid-mount
 echo -e "$current_password\n" | sudo -S cp extras/scripts/waydroid-firewall /usr/bin/waydroid-firewall
-echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
+echo -e "$current_password\n" | sudo -S mkdir -p /usr/lib/steamos-waydroid
+echo -e "$current_password\n" | sudo -S cp \
+	libexec/steamos-waydroid/shared-folder.sh \
+	libexec/steamos-waydroid/waydroid-profile.sh \
+	/usr/lib/steamos-waydroid/
+echo -e "$current_password\n" | sudo -S chmod +x /usr/bin/waydroid-startup-scripts /usr/bin/waydroid-shutdown-scripts /usr/bin/waydroid-controller-hotplug /usr/bin/waydroid-mount /usr/bin/waydroid-firewall
 
 # custom sudoers file do not ask for sudo for the custom waydroid scripts
 echo -e "$current_password\n" | sudo -S visudo -cf extras/zzzzzzzz-waydroid >/dev/null || abort_run
@@ -560,7 +670,8 @@ echo -e "$current_password\n" | sudo -S install -o root -g root -m 0440 \
 echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 
 # Copy Waydroid launcher dependencies.
-cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Waydroid-Toolbox.sh \
+cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Android_Waydroid_Test_Cage.sh \
+	extras/scripts/Waydroid-Toolbox.sh \
 	extras/scripts/Waydroid-Updater.sh extras/scripts/select-bundle ~/Android_Waydroid
 # Toolbox delegates destructive reset operations back to this checkout so the
 # protected canonical uninstaller owns image preservation and confirmation.
@@ -601,6 +712,9 @@ if [ "$REPAIR_MODE" = true ]; then
 		abort_run
 	fi
 else
+	if [ "$TEST_INSTALL_MODE" = true ]; then
+		ensure_waydroid_runtime_inactive_for_test_install || abort_run
+	fi
 	if [ -e "$WAYDROID_IMAGE" ] || [ -L "$WAYDROID_IMAGE" ]; then
 		echo Refusing to initialize Android while an unhandled image exists: "$WAYDROID_IMAGE" >&2
 		abort_run
@@ -640,8 +754,11 @@ if [ "$REPAIR_MODE" = true ]; then
 		/usr/bin/waydroid \
 		/usr/bin/waydroid-startup-scripts \
 		/usr/bin/waydroid-shutdown-scripts \
+		/usr/bin/waydroid-controller-hotplug \
 		/usr/bin/waydroid-mount \
 		/usr/bin/waydroid-firewall \
+		/usr/lib/steamos-waydroid/shared-folder.sh \
+		/usr/lib/steamos-waydroid/waydroid-profile.sh \
 		/usr/lib/systemd/system/waydroid-container.service \
 		/etc/sudoers.d/zzzzzzzz-waydroid; do
 		if [ ! -e "$required_file" ]; then
@@ -688,40 +805,70 @@ echo -e "$current_password\n" | sudo -S cp extras/fixes/audio.rc /var/lib/waydro
 echo -e "$current_password\n" | sudo -S wget https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts \
 	-O /var/lib/waydroid/overlay/system/etc/hosts
 
-Android_Choice=$(zenity --width 1040 --height 320 --list --radiolist --multiple \
-	--title "SteamOS Waydroid Bundle  - https://github.com/pjohno/steamos-waydroid-bundle" \
-	--column "Select One" \
-	--column "Option" \
-	--column="Description - Read this carefully!" \
-	TRUE A13_GAPPS "Download official Android 13 image with Google Play Store." \
-	FALSE A13_NO_GAPPS "Download official Android 13 image without Google Play Store." \
-	FALSE TV13_GAPPS "Download unofficial Android 13 TV image with Google Play Store - thanks SupeChicken666 for the image!" \
-	FALSE TV13_NO_GAPPS "Download unofficial Android 13 TV image without Google Play Store - thanks SupeChicken666 for the image!" \
-	FALSE EXIT "***** Exit this script *****")
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	Android_Choice=$(zenity --width 1040 --height 480 --list --radiolist \
+		--title "Install Waydroid Test - choose one Android image" \
+		--column "Select One" \
+		--column "ID" \
+		--column "Option" \
+		--column "Description" \
+		--hide-column=2 --print-column=2 \
+		TRUE A13_GAPPS "Android 13 — GApps" "Stable / standard Waydroid image" \
+		FALSE A13_NO_GAPPS "Android 13 — Vanilla" "Stable / standard Waydroid image" \
+		FALSE A16_GAPPS "Android 16 — GApps (Experimental)" "Latest test platform" \
+		FALSE A16_NO_GAPPS "Android 16 — Vanilla (Experimental)" "Latest test platform" \
+		FALSE TV16_GAPPS "Android TV 16 — GApps (Experimental)" "Latest Android TV test platform" \
+		FALSE TV16_NO_GAPPS "Android TV 16 — Vanilla (Experimental)" "Latest Android TV test platform" \
+		FALSE EXIT "Exit" "Exit this installer")
+else
+	Android_Choice=$(zenity --width 1040 --height 320 --list --radiolist --multiple \
+		--title "SteamOS Waydroid Bundle  - https://github.com/pjohno/steamos-waydroid-bundle" \
+		--column "Select One" \
+		--column "Option" \
+		--column="Description - Read this carefully!" \
+		TRUE A13_GAPPS "Download official Android 13 image with Google Play Store." \
+		FALSE A13_NO_GAPPS "Download official Android 13 image without Google Play Store." \
+		FALSE TV13_GAPPS "Download unofficial Android 13 TV image with Google Play Store - thanks SupeChicken666 for the image!" \
+		FALSE TV13_NO_GAPPS "Download unofficial Android 13 TV image without Google Play Store - thanks SupeChicken666 for the image!" \
+		FALSE EXIT "***** Exit this script *****")
+fi
 
 if [ $? -eq 1 ] || [ "$Android_Choice" == "EXIT" ]; then
 	echo User pressed CANCEL / EXIT. Goodbye!
+	if [ "$TEST_INSTALL_MODE" = true ]; then
+		cleanup_failed_test_environment
+		exit 1
+	fi
 	cleanup_exit
+fi
 
+if ! set_android_image_selection "$Android_Choice"; then
+	abort_run
 elif [ "$Android_Choice" == "A13_GAPPS" ]; then
 	echo Initializing Waydroid.
-	echo -e "$current_password\n" | sudo -S waydroid init -s GAPPS
+	echo -e "$current_password\n" | run_profile_sudo waydroid init -s GAPPS
 	check_waydroid_init
 
 elif [ "$Android_Choice" == "A13_NO_GAPPS" ]; then
 	echo Initializing Waydroid.
-	echo -e "$current_password\n" | sudo -S waydroid init
+	echo -e "$current_password\n" | run_profile_sudo waydroid init
 	check_waydroid_init
 
 elif [ "$Android_Choice" == "TV13_GAPPS" ]; then
 	echo Initializing Waydroid.
-	echo -e "$current_password\n" | sudo -S waydroid init -c ${ANDROID13_TV_OTA}/system -v ${ANDROID13_TV_OTA}/vendor -s GAPPS
+	echo -e "$current_password\n" | run_profile_sudo waydroid init -c ${ANDROID13_TV_OTA}/system -v ${ANDROID13_TV_OTA}/vendor -s GAPPS
 	check_waydroid_init
 
 elif [ "$Android_Choice" == "TV13_NO_GAPPS" ]; then
 	echo Initializing Waydroid.
-	echo -e "$current_password\n" | sudo -S waydroid init -c ${ANDROID13_TV_OTA}/system -v ${ANDROID13_TV_OTA}/vendor
+	echo -e "$current_password\n" | run_profile_sudo waydroid init -c ${ANDROID13_TV_OTA}/system -v ${ANDROID13_TV_OTA}/vendor
 	check_waydroid_init
+
+elif [ "$ANDROID_VERSION" = 16 ]; then
+	if ! install_experimental_android_image; then
+		echo "Android $ANDROID_VERSION $ANDROID_VARIANT installation failed; no fallback image was installed." >&2
+		abort_run
+	fi
 fi
 
 # run casualsnek / aleasto waydroid_script
@@ -729,10 +876,14 @@ echo Install $ARM_Choice widevine and fingerprint spoof.
 if [ "$Android_Choice" == "TV13_GAPPS" ] || [ "$Android_Choice" == "TV13_NO_GAPPS" ]; then
 	echo No need for casualsnek / aleasto waydroid_script for TV13 images.
 	echo TV13 images already contains libhoudini arm translation layer and widevine.
+elif [ "$ANDROID_VERSION" = 16 ]; then
+	echo "Skipping the Android-13-specific waydroid_script ARM/Widevine modification for Android $ANDROID_VERSION."
+	echo "The experimental image's built-in ARM support is retained; Widevine is not modified."
+	rm -rf -- "$WAYDROID_SCRIPT_DIR"
 else
 	if ! install_android_extras; then
 		echo "Android extras installation failed; the incomplete installation will be cleaned up." >&2
-		cleanup_exit
+		abort_run
 	fi
 fi
 
@@ -750,11 +901,19 @@ echo Waydroid has been successfully installed!
 echo Unmounting the custom /var/lib/waydroid
 echo -e "$current_password\n" | sudo systemctl stop waydroid-container.service
 unmount_waydroid_var
-if ! mv extras/waydroid.img ~/Android_Waydroid/waydroid.img; then
+if ! commit_new_android_image extras/waydroid.img; then
 	echo Failed to activate the newly initialized Android image. >&2
 	abort_run
 fi
 ANDROID_REINSTALL_COMMITTED=true
+if [ "$TEST_INSTALL_MODE" = true ]; then
+	if ! record_test_android_metadata; then
+		echo Failed to record the Waydroid Test Android version metadata. >&2
+		abort_run
+	fi
+	TEST_INSTALL_COMMITTED=true
+	echo Waydroid Test has been successfully installed without modifying the normal Android environment.
+fi
 if [ -n "${ARCHIVED_ANDROID_IMAGE:-}" ] && [ -f "$ARCHIVED_ANDROID_IMAGE" ]; then
 	printf 'The previous Android image remains archived at: %s\n' "$ARCHIVED_ANDROID_IMAGE"
 fi

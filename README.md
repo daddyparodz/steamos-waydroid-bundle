@@ -93,6 +93,19 @@ Waydroid is running, the normal mount lifecycle bind-mounts it at Android shared
 storage as `Waydroid Share`. Shutdown and uninstall unmount it when necessary,
 but uninstall never deletes the host folder or the files inside it.
 
+The share works in both the normal Android 13 environment and the Android 16
+test environment. Files created on SteamOS are visible and readable in Android,
+and the mount is removed during a normal Waydroid shutdown.
+
+Direct host/Android sharing currently has an ownership limitation. The host
+directory normally remains `deck:deck` with `0755` permissions, so arbitrary
+Android apps may be unable to create files or folders in it. Making the
+directory world-writable can permit writes, but Android-created content then
+appears on SteamOS under app-specific numeric UIDs and GIDs. Those IDs differ
+between Android installations and must not be hard-coded. Do not leave the
+share at `0777`; fully seamless bidirectional ownership mapping is not currently
+provided. The recommended use is making SteamOS files available to Android.
+
 On first run, the installer creates an ignored machine-local
 `.deck-config.env` with mode `0600` and selects the official public bundle
 Release. It then obtains the exact bundle before making privileged host
@@ -113,6 +126,14 @@ choices plus experimental regular and TV x86_64 images:
 - Android 16 Vanilla (Experimental);
 - Android TV 16 GApps (Experimental);
 - Android TV 16 Vanilla (Experimental).
+
+Use an Android 16 test environment with a Waydroid version that properly
+supports Android 16. Hardware testing confirmed that Waydroid 1.6.3 on SteamOS
+Beta 3.8.25 (`BUILD_ID=20260807.2`) boots, runs, and shuts down Android 16
+correctly. With Waydroid 1.5.4 on SteamOS Stable 3.8.16
+(`BUILD_ID=20260716.1`), Android 16 can still boot and run, but container
+lifecycle operations such as shutdown can be unreliable. Android 13 remains
+the normal supported installation path.
 
 The experimental Android 16 images are provided by the independent
 [SupeChicken / WayDroid-ATV project](https://sourceforge.net/projects/waydroid-atv/files/images/);
@@ -296,6 +317,32 @@ Ctrl-C and retry if the chosen mirror is stalled.
 
 The installer deliberately preserves an existing matching Steam shortcut. To
 replace it, delete that shortcut through Steam and run the installer again.
+
+### Another Waydroid profile is active
+
+After leaving Waydroid in Gaming Mode, the previously running container or
+image can occasionally remain active. Launching the other environment then
+reports an error similar to `another Waydroid profile is active`. This guard is
+intentional: it prevents one profile from replacing `/var/lib/waydroid` while
+the other image is still active.
+
+Exit to Desktop Mode, open Konsole, and shut down the environment that was
+previously running. For the normal Android environment, run:
+
+```bash
+sudo /usr/bin/waydroid-shutdown-scripts main
+```
+
+For the test environment, run:
+
+```bash
+sudo /usr/bin/waydroid-shutdown-scripts test
+```
+
+Return to Gaming Mode and launch the desired environment again. Rebooting the
+Deck is also a reasonable recovery if the container does not shut down cleanly.
+This stale-container behaviour can affect either environment and is not
+specific to the test profile.
 
 ### Compatibility reports
 

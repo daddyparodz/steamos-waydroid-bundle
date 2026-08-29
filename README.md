@@ -71,8 +71,9 @@ artifact source or another source you control and trust.
 - at least 10 GB free under the home filesystem for a new Android install;
 - internet access for source, bundle, and Android-image downloads.
 
-SteamOS development and `main` branches are experimental. The installer still
-displays an explicit warning there.
+SteamOS Stable (`rel`), Beta, and Preview update branches are supported when a
+compatible bundle is available. Development and `main` branches remain
+experimental, and the installer displays an explicit warning there.
 
 ## Install
 

@@ -25,13 +25,13 @@ run_nonprivileged_sanity_checks() {
 	printf 'SteamOS %s (%s branch) detected.\n' "$STEAMOS_VERSION_ID" "$STEAMOS_BRANCH"
 
 	case "$STEAMOS_BRANCH" in
-	rel | beta)
+	rel | beta | preview)
 		printf 'Supported SteamOS %s branch detected.\n' "$STEAMOS_BRANCH"
 		;;
 	main)
 		if ! zenity --question \
 			--title "SteamOS Waydroid Installer" \
-			--text "WARNING: SteamOS main branch detected.\n\nThe installer is validated for the stable and beta branches. A compatible target bundle must still be published for this userspace.\n\nContinue?" \
+			--text "WARNING: SteamOS main branch detected.\n\nThe installer is validated for the stable, beta, and preview branches. A compatible target bundle must still be published for this userspace.\n\nContinue?" \
 			--width 650 --height 75 >/dev/null 2>&1; then
 			sanity_fail "installation cancelled on the SteamOS main branch"
 			return 1

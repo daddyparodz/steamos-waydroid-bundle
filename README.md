@@ -25,8 +25,9 @@ settings, files, or login sessions.
 
 ## Compatibility and safety model
 
-The installer supports a SteamOS release only when a verified compatible bundle
-has been published. The fingerprint includes
+The installer can run on any SteamOS version for which a verified compatible
+bundle has been published; it does not impose a fixed SteamOS version check.
+The fingerprint includes
 the SteamOS release and build plus relevant compiler, runtime, Python, Wayland,
 graphics, input, and system-library versions.
 
@@ -40,7 +41,7 @@ and branch checks still apply.
 Before requesting sudo access, the installer:
 
 - confirms that it is running locally in SteamOS Desktop Mode;
-- checks the SteamOS release and update branch;
+- identifies the SteamOS release and checks the update branch;
 - selects an already-installed exact or ABI-compatible bundle, or downloads one;
 - verifies the archive hash, paths, manifest, ELF dependencies, and target
   fingerprint;
@@ -62,8 +63,8 @@ artifact source or another source you control and trust.
 
 ## Requirements
 
-- Steam Deck running a supported SteamOS release with a compatible verified
-  bundle available;
+- Steam Deck running any SteamOS version with a compatible verified bundle
+  available;
 - an exact or ABI-compatible published bundle for that SteamOS userspace;
 - Desktop Mode with a working graphical session;
 - a sudo password for the `deck` user;

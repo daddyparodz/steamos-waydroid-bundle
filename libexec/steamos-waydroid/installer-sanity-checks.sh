@@ -9,7 +9,7 @@ sanity_fail() {
 }
 
 run_nonprivileged_sanity_checks() {
-	local version_rest version_major version_minor free_home
+	local free_home
 
 	if [[ "${ID:-}" != steamos ]]; then
 		sanity_fail "this installer can only run on SteamOS"
@@ -22,14 +22,6 @@ run_nonprivileged_sanity_checks() {
 	fi
 	printf 'Installer is running in Desktop Mode.\n'
 
-	version_major="${STEAMOS_VERSION_ID%%.*}"
-	version_rest="${STEAMOS_VERSION_ID#*.}"
-	version_minor="${version_rest%%.*}"
-	if [[ ! "$version_major" =~ ^[0-9]+$ || ! "$version_minor" =~ ^[0-9]+$ ]] ||
-		((version_major != 3 || version_minor != 8)); then
-		sanity_fail "SteamOS $STEAMOS_VERSION_ID is unsupported; this release supports SteamOS 3.8.x"
-		return 1
-	fi
 	printf 'SteamOS %s (%s branch) detected.\n' "$STEAMOS_VERSION_ID" "$STEAMOS_BRANCH"
 
 	case "$STEAMOS_BRANCH" in

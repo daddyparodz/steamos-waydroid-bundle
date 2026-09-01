@@ -244,6 +244,11 @@ if command -v qdbus6 >/dev/null 2>&1 &&
 		[ -x "$SCRIPT_DIR/waydroid-touch-nav.py" ]; then
 		"$SCRIPT_DIR/waydroid-touch-nav.py" &
 		touch_nav_pid=$!
+	else
+		# Phone images must stay in one compositor surface. Multi-window mode
+		# leaves old Google login activities mapped above the resumed activity,
+		# producing visible but unclickable stale buttons.
+		waydroid prop set persist.waydroid.multi_windows false >/dev/null 2>&1 || true
 	fi
 	if [ -z "${1:-}" ]; then
 		/usr/bin/waydroid show-full-ui &

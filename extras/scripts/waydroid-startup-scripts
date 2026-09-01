@@ -101,19 +101,27 @@ if waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw tv 
 	waydroid shell -- setprop ctl.restart adbd
 fi
 
-# Android TV's stock Leanback IME ignores pointer/touch key activation. Install
-# the verified APK cached by the installer, then keep its exact registered
-# component selected; the expanded class name is not accepted by `ime`.
-if waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw tv; then
-	HELIBOARD_APK=$PROFILE_HOME/HeliBoard.apk
-	if ! waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1 &&
-		[ -r "$HELIBOARD_APK" ]; then
-		waydroid app install "$HELIBOARD_APK" || exit 1
-	fi
-	if waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1; then
-		waydroid shell -- ime enable helium314.keyboard/.latin.LatinIME || true
-		waydroid shell -- ime set helium314.keyboard/.latin.LatinIME || true
-	fi
+# Use the same pointer- and touch-capable keyboard on regular Android and TV.
+# Keep its exact registered component selected; the expanded class name is not
+# accepted by `ime`.
+HELIBOARD_APK=$PROFILE_HOME/HeliBoard.apk
+if ! waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1 &&
+	[ -r "$HELIBOARD_APK" ]; then
+	waydroid app install "$HELIBOARD_APK" || exit 1
+fi
+if waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1; then
+	waydroid shell -- ime enable helium314.keyboard/.latin.LatinIME || true
+	waydroid shell -- ime set helium314.keyboard/.latin.LatinIME || true
+fi
+
+# Let the regular phone/tablet image follow sensor changes and each app's
+# requested orientation. Android TV deliberately remains landscape-oriented.
+if ! waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw tv; then
+	waydroid shell -- settings put system accelerometer_rotation 1 || true
+	waydroid shell -- settings put secure show_rotation_suggestions 1 || true
+	waydroid shell -- wm user-rotation free || true
+	waydroid shell -- wm fixed-to-user-rotation default || true
+	waydroid shell -- wm set-ignore-orientation-request false || true
 fi
 
 # disable initial device setup via ADB

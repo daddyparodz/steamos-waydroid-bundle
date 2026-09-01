@@ -18,8 +18,9 @@ ANDROID16_TV_GAPPS_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_tv_x
 ANDROID16_TV_VANILLA_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_tv_x86_64/lineage-23.0-20260403-VANILLA-waydroid_tv_x86_64-system.zip
 ANDROID16_TV_VENDOR_URL=$SUPECHICKEN_SOURCEFORGE_BASE/vendor/waydroid_tv_x86_64/lineage-23.0-20260403-MAINLINE-waydroid_tv_x86_64-vendor.zip
 
-# HeliBoard is used instead of the Android TV Leanback keyboard, whose keys do
-# not accept touchscreen or mouse-as-touch activation in Waydroid.
+# HeliBoard provides a consistent touch- and mouse-capable keyboard in both the
+# regular Android and Android TV images. The TV Leanback keyboard in particular
+# does not accept touchscreen or mouse-as-touch activation in Waydroid.
 HELIBOARD_VERSION=4.1
 HELIBOARD_APK_URL=https://github.com/Helium314/HeliBoard/releases/download/v4.1/HeliBoard_4.1-release.apk
 HELIBOARD_APK_SHA256=eb9c06685ebd5b7307491da9ef15fb5e29694077a934a8699b9b6772c6f76075
@@ -27,7 +28,7 @@ ANDROID_PLATFORM_TOOLS_VERSION=37.0.1
 ANDROID_PLATFORM_TOOLS_URL=https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip
 ANDROID_PLATFORM_TOOLS_SHA256=d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1
 
-download_tv_touch_keyboard() {
+download_touch_keyboard() {
 	local destination=$1 temporary=${1}.part
 
 	rm -f -- "$temporary"

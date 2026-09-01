@@ -847,22 +847,26 @@ fi
 
 if ! set_android_image_selection "$Android_Choice"; then
 	abort_run
-elif [[ "$Android_Choice" == TV* ]]; then
-	echo "Downloading the verified HeliBoard touch keyboard for Android TV."
-	if ! download_tv_touch_keyboard "$HOME/Android_Waydroid/HeliBoard.apk"; then
-		echo "Android TV installation requires its touch-capable keyboard." >&2
+
+else
+	echo "Downloading the verified HeliBoard touch keyboard."
+	if ! download_touch_keyboard "$HOME/Android_Waydroid/HeliBoard.apk"; then
+		echo "Waydroid installation requires its touch-capable keyboard." >&2
 		abort_run
 	fi
-	echo "Downloading verified Android platform tools for touch navigation."
-	if ! download_android_platform_tools "$HOME/Android_Waydroid/platform-tools"; then
-		echo "Android TV installation requires its touch-navigation bridge." >&2
-		abort_run
-	fi
-	if [ ! -r "$HOME/Android_Waydroid/adbkey" ]; then
-		"$HOME/Android_Waydroid/platform-tools/adb" keygen \
-			"$HOME/Android_Waydroid/adbkey" || abort_run
-		chmod 0600 "$HOME/Android_Waydroid/adbkey"
-		chmod 0644 "$HOME/Android_Waydroid/adbkey.pub"
+
+	if [[ "$Android_Choice" == TV* ]]; then
+		echo "Downloading verified Android platform tools for touch navigation."
+		if ! download_android_platform_tools "$HOME/Android_Waydroid/platform-tools"; then
+			echo "Android TV installation requires its touch-navigation bridge." >&2
+			abort_run
+		fi
+		if [ ! -r "$HOME/Android_Waydroid/adbkey" ]; then
+			"$HOME/Android_Waydroid/platform-tools/adb" keygen \
+				"$HOME/Android_Waydroid/adbkey" || abort_run
+			chmod 0600 "$HOME/Android_Waydroid/adbkey"
+			chmod 0644 "$HOME/Android_Waydroid/adbkey.pub"
+		fi
 	fi
 fi
 

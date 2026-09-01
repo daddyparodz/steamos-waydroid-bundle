@@ -239,7 +239,9 @@ fi
 # land elsewhere. KWin supplies fullscreen kiosk presentation itself here.
 if command -v qdbus6 >/dev/null 2>&1 &&
 	qdbus6 org.kde.KWin /KWin supportInformation >/dev/null 2>&1; then
-	if [ -x "$SCRIPT_DIR/waydroid-touch-nav.py" ]; then
+	ANDROID_CHARACTERISTICS=$(waydroid prop get ro.build.characteristics 2>/dev/null || true)
+	if printf '%s\n' "$ANDROID_CHARACTERISTICS" | grep -qw tv &&
+		[ -x "$SCRIPT_DIR/waydroid-touch-nav.py" ]; then
 		"$SCRIPT_DIR/waydroid-touch-nav.py" &
 		touch_nav_pid=$!
 	fi

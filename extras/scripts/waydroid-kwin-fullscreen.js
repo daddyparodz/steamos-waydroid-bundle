@@ -21,12 +21,6 @@ function fullscreenWaydroid(window) {
         desktopFileName.startsWith("waydroid.")) {
         window.fullScreen = true;
         window.noBorder = true;
-        // A fully opaque fullscreen surface can be scanned out directly. On
-        // the Deck's natively portrait LCD, Android portrait buffers may then
-        // show vertical line artifacts after KWin rotates them. A practically
-        // invisible opacity adjustment keeps only Waydroid in the composited
-        // path without changing the output or global compositor settings.
-        window.opacity = 0.999;
         // Waydroid keeps separate host surfaces for Android activities. Marking
         // every one keep-above can pin an older login/dialog surface over the
         // currently resumed activity, leaving visible controls unclickable.

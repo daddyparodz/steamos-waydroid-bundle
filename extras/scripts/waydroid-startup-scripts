@@ -126,6 +126,14 @@ fi
 # Let the regular phone/tablet image follow sensor changes and each app's
 # requested orientation. Android TV deliberately remains landscape-oriented.
 if ! waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw tv; then
+	# Keep standard phone navigation reachable in fullscreen. Some GApps flows
+	# leave a global immersive-status policy behind and this image does not
+	# select a navigation overlay by default, hiding Home, Recents and the shade.
+	waydroid shell -- settings delete global policy_control || true
+	waydroid shell -- cmd overlay enable-exclusive --category \
+		com.android.internal.systemui.navbar.threebutton --user 0 || true
+	waydroid shell -- settings put secure navigation_mode 0 || true
+
 	waydroid shell -- settings put system accelerometer_rotation 1 || true
 	waydroid shell -- settings put secure show_rotation_suggestions 1 || true
 	waydroid shell -- wm user-rotation free || true

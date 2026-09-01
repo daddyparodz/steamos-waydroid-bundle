@@ -52,6 +52,9 @@ COMPATIBILITY_REPORT="$BUNDLE/tools/compatibility-report.sh"
 TARGET_ALLOW="$HOME/.local/opt/steamos-waydroid/allow-target-mismatch"
 CONFIG_DIR="$SCRIPT_DIR/config"
 RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
+# KDE runs a Wayland session on Steam Deck. Force Cage to nest through
+# Wayland so touchscreen events are forwarded instead of degraded by X11.
+export WLR_BACKENDS=wayland
 
 if [ ! -x "$CAGE" ] ||
 	[ ! -x "$WLR_RANDR" ] ||
@@ -165,6 +168,10 @@ fi
 # the session started below will bind to Cage instead of returning immediately
 # through the stale session on the desktop compositor.
 /usr/bin/waydroid session stop >/dev/null 2>&1 || true
+# Stopping a session can activate waydroid-container.service through D-Bus even
+# when no managed profile is mounted. Stop that transient service before the
+# profile preflight, otherwise waydroid-mount correctly rejects the stale state.
+sudo systemctl stop waydroid-container.service >/dev/null 2>&1 || true
 
 # Mount persistent Android state before starting the container. From this point
 # onward, the EXIT trap owns cleanup, including launch failures and signals.
@@ -208,10 +215,6 @@ if [ -z "${1:-}" ]; then
 		readonly CONFIG_DIR="$3"
 		readonly WAYDROID_PROFILE="$4"
 
-		"$WLR_RANDR" \
-			--output X11-1 \
-			--custom-mode "$RESOLUTION"
-
 		/usr/bin/waydroid show-full-ui &
 		readonly WAYDROID_SESSION_PID=$!
 
@@ -251,10 +254,6 @@ else
 		readonly CONFIG_DIR="$3"
 		readonly PACKAGE="$4"
 		readonly WAYDROID_PROFILE="$5"
-
-		"$WLR_RANDR" \
-			--output X11-1 \
-			--custom-mode "$RESOLUTION"
 
 		/usr/bin/waydroid session start &
 		readonly WAYDROID_SESSION_PID=$!

@@ -265,6 +265,13 @@ if command -v qdbus6 >/dev/null 2>&1 &&
 		exit 1
 	fi
 
+	# Older host helpers reset this to "default", which letterboxes portrait
+	# apps inside Waydroid's landscape surface. Enforce the profile behavior at
+	# the launcher boundary as well so upgraded launchers work before the next
+	# immutable SteamOS host-package refresh.
+	waydroid shell -- wm fixed-to-user-rotation disabled || true
+	waydroid shell -- wm set-ignore-orientation-request false || true
+
 	waydroid prop set persist.waydroid.fake_wifi "$(cat "$CONFIG_DIR/fake_wifi")"
 	waydroid prop set persist.waydroid.fake_touch "$(cat "$CONFIG_DIR/fake_touch")"
 

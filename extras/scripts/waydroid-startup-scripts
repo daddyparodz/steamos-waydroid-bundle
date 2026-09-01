@@ -109,7 +109,16 @@ if ! waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1 &&
 	[ -r "$HELIBOARD_APK" ]; then
 	waydroid app install "$HELIBOARD_APK" || exit 1
 fi
+# A fresh GApps phone image can register the package globally before activating
+# it for Android user 0. Make that first-boot transition explicit instead of
+# racing the package scanner and falling back to the stock AOSP keyboard.
+if ! waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1 &&
+	waydroid shell -- pm list packages -u helium314.keyboard 2>/dev/null |
+		grep -Fq 'package:helium314.keyboard'; then
+	waydroid shell -- cmd package install-existing --user 0 helium314.keyboard || true
+fi
 if waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1; then
+	waydroid shell -- pm enable --user 0 helium314.keyboard || true
 	waydroid shell -- ime enable helium314.keyboard/.latin.LatinIME || true
 	waydroid shell -- ime set helium314.keyboard/.latin.LatinIME || true
 fi

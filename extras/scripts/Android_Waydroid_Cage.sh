@@ -124,9 +124,15 @@ fi
 
 cleanup_required=false
 kwin_fullscreen_loaded=false
+touch_nav_pid=
 LAUNCH_ERROR_LOG="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-launch.XXXXXX")"
 
 cleanup() {
+	if [ -n "$touch_nav_pid" ]; then
+		kill "$touch_nav_pid" 2>/dev/null || true
+		wait "$touch_nav_pid" 2>/dev/null || true
+		touch_nav_pid=
+	fi
 	if [ "$kwin_fullscreen_loaded" = true ]; then
 		qdbus6 org.kde.KWin /Scripting \
 			org.kde.kwin.Scripting.unloadScript \
@@ -233,6 +239,10 @@ fi
 # land elsewhere. KWin supplies fullscreen kiosk presentation itself here.
 if command -v qdbus6 >/dev/null 2>&1 &&
 	qdbus6 org.kde.KWin /KWin supportInformation >/dev/null 2>&1; then
+	if [ -x "$SCRIPT_DIR/waydroid-touch-nav.py" ]; then
+		"$SCRIPT_DIR/waydroid-touch-nav.py" &
+		touch_nav_pid=$!
+	fi
 	if [ -z "${1:-}" ]; then
 		/usr/bin/waydroid show-full-ui &
 		WAYDROID_SESSION_PID=$!

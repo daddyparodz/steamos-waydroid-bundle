@@ -23,6 +23,9 @@ ANDROID16_TV_VENDOR_URL=$SUPECHICKEN_SOURCEFORGE_BASE/vendor/waydroid_tv_x86_64/
 HELIBOARD_VERSION=4.1
 HELIBOARD_APK_URL=https://github.com/Helium314/HeliBoard/releases/download/v4.1/HeliBoard_4.1-release.apk
 HELIBOARD_APK_SHA256=eb9c06685ebd5b7307491da9ef15fb5e29694077a934a8699b9b6772c6f76075
+ANDROID_PLATFORM_TOOLS_VERSION=37.0.1
+ANDROID_PLATFORM_TOOLS_URL=https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip
+ANDROID_PLATFORM_TOOLS_SHA256=d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1
 
 download_tv_touch_keyboard() {
 	local destination=$1 temporary=${1}.part
@@ -40,6 +43,41 @@ download_tv_touch_keyboard() {
 		return 1
 	fi
 	mv -f -- "$temporary" "$destination"
+}
+
+download_android_platform_tools() {
+	local destination=$1 archive=${1}.zip.part staging=${1}.staging
+
+	rm -f -- "$archive"
+	rm -rf -- "$staging"
+	if ! wget --progress=bar:force:noscroll --tries=3 --timeout=30 \
+		-O "$archive" "$ANDROID_PLATFORM_TOOLS_URL"; then
+		printf 'error: Android platform-tools %s download failed\n' \
+			"$ANDROID_PLATFORM_TOOLS_VERSION" >&2
+		return 1
+	fi
+	if ! printf '%s  %s\n' "$ANDROID_PLATFORM_TOOLS_SHA256" "$archive" | sha256sum -c -; then
+		printf 'error: Android platform-tools checksum verification failed\n' >&2
+		rm -f -- "$archive"
+		return 1
+	fi
+	mkdir -p -- "$staging" || return 1
+	if ! bsdtar -xf "$archive" -C "$staging"; then
+		printf 'error: could not extract Android platform-tools\n' >&2
+		rm -f -- "$archive"
+		rm -rf -- "$staging"
+		return 1
+	fi
+	if [ ! -x "$staging/platform-tools/adb" ]; then
+		printf 'error: Android platform-tools archive did not contain adb\n' >&2
+		rm -f -- "$archive"
+		rm -rf -- "$staging"
+		return 1
+	fi
+	rm -rf -- "$destination"
+	mv -- "$staging/platform-tools" "$destination"
+	rm -rf -- "$staging"
+	rm -f -- "$archive"
 }
 
 set_android_image_selection() {

@@ -673,7 +673,8 @@ echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Android_Waydroid_Test_Cage.sh \
 	extras/scripts/Waydroid-Toolbox.sh \
 	extras/scripts/Waydroid-Updater.sh extras/scripts/select-bundle \
-	extras/scripts/waydroid-kwin-fullscreen.js ~/Android_Waydroid
+	extras/scripts/waydroid-kwin-fullscreen.js \
+	extras/scripts/waydroid-touch-nav.py ~/Android_Waydroid
 # Toolbox delegates destructive reset operations back to this checkout so the
 # protected canonical uninstaller owns image preservation and confirmation.
 if ! printf '%s\n' "$WORKING_DIR" >~/Android_Waydroid/installer-root ||
@@ -693,7 +694,8 @@ mkdir -p ~/Android_Waydroid/icons
 cp -a extras/icons/. ~/Android_Waydroid/icons/
 
 # Waydroid launcher, toolbox and updater.
-chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-bundle
+chmod +x ~/Android_Waydroid/*.sh ~/Android_Waydroid/select-bundle \
+	~/Android_Waydroid/waydroid-touch-nav.py
 
 # Dolphin File Manager extension for root access.
 mkdir -p ~/.local/share/kio/servicemenus
@@ -850,6 +852,17 @@ elif [[ "$Android_Choice" == TV* ]]; then
 	if ! download_tv_touch_keyboard "$HOME/Android_Waydroid/HeliBoard.apk"; then
 		echo "Android TV installation requires its touch-capable keyboard." >&2
 		abort_run
+	fi
+	echo "Downloading verified Android platform tools for touch navigation."
+	if ! download_android_platform_tools "$HOME/Android_Waydroid/platform-tools"; then
+		echo "Android TV installation requires its touch-navigation bridge." >&2
+		abort_run
+	fi
+	if [ ! -r "$HOME/Android_Waydroid/adbkey" ]; then
+		"$HOME/Android_Waydroid/platform-tools/adb" keygen \
+			"$HOME/Android_Waydroid/adbkey" || abort_run
+		chmod 0600 "$HOME/Android_Waydroid/adbkey"
+		chmod 0644 "$HOME/Android_Waydroid/adbkey.pub"
 	fi
 fi
 

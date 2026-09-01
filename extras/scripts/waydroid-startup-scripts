@@ -81,6 +81,26 @@ mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 "$WAYDROI
 announce_virtual_game_controllers
 start_android_16_controller_hotplug
 
+# The stock Android TV launcher exposes Home/Discover/Apps as remote-focus
+# controls rather than clickable views. Pre-authorize the bundle's private ADB
+# key so the user-session touch bridge can translate only those controls while
+# forwarding all normal launcher input unchanged.
+if waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw tv &&
+	[ -r "$PROFILE_HOME/adbkey.pub" ]; then
+	ADB_PUBLIC_KEY=$(cat "$PROFILE_HOME/adbkey.pub")
+	waydroid shell -- mkdir -p /data/misc/adb
+	if ! waydroid shell -- grep -Fqx "$ADB_PUBLIC_KEY" /data/misc/adb/adb_keys 2>/dev/null; then
+		ADB_PUBLIC_KEY_BASE64=$(printf '%s\n' "$ADB_PUBLIC_KEY" | base64 -w 0)
+		waydroid shell -- sh -c \
+			"printf '%s' '$ADB_PUBLIC_KEY_BASE64' | base64 -d >>/data/misc/adb/adb_keys"
+		waydroid shell -- chmod 0640 /data/misc/adb/adb_keys
+		waydroid shell -- chown system:shell /data/misc/adb/adb_keys
+	fi
+	waydroid shell -- setprop persist.adb.tcp.port 5555
+	waydroid shell -- setprop service.adb.tcp.port 5555
+	waydroid shell -- setprop ctl.restart adbd
+fi
+
 # Android TV's stock Leanback IME ignores pointer/touch key activation. Install
 # the verified APK cached by the installer, then keep its exact registered
 # component selected; the expanded class name is not accepted by `ime`.

@@ -137,7 +137,10 @@ if ! waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw t
 	waydroid shell -- settings put system accelerometer_rotation 1 || true
 	waydroid shell -- settings put secure show_rotation_suggestions 1 || true
 	waydroid shell -- wm user-rotation free || true
-	waydroid shell -- wm fixed-to-user-rotation default || true
+	# `default` resolves to fixed landscape on this large-screen profile and
+	# letterboxes portrait-only games. Disabled lets each foreground app rotate
+	# the complete Android display to its requested portrait or landscape mode.
+	waydroid shell -- wm fixed-to-user-rotation disabled || true
 	waydroid shell -- wm set-ignore-orientation-request false || true
 fi
 

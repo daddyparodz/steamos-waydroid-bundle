@@ -21,7 +21,11 @@ function fullscreenWaydroid(window) {
         desktopFileName.startsWith("waydroid.")) {
         window.fullScreen = true;
         window.noBorder = true;
-        window.keepAbove = true;
+        // Waydroid keeps separate host surfaces for Android activities. Marking
+        // every one keep-above can pin an older login/dialog surface over the
+        // currently resumed activity, leaving visible controls unclickable.
+        // Fullscreen already places the active surface above Plasma panels.
+        window.keepAbove = false;
     }
 }
 

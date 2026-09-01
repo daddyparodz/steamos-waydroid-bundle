@@ -10,10 +10,17 @@ function fullscreenWaydroid(window) {
         window.keepAbove = true;
         return;
     }
-    if (window.resourceName === "cage" ||
-        window.resourceName === "waydroid" ||
-        window.resourceClass === "Waydroid") {
+    const resourceName = (window.resourceName || "").toLowerCase();
+    const resourceClass = (window.resourceClass || "").toLowerCase();
+    const desktopFileName = (window.desktopFileName || "").toLowerCase();
+    if (resourceName === "cage" ||
+        resourceName === "waydroid" ||
+        resourceClass === "waydroid" ||
+        resourceClass.startsWith("waydroid.") ||
+        desktopFileName === "waydroid" ||
+        desktopFileName.startsWith("waydroid.")) {
         window.fullScreen = true;
+        window.noBorder = true;
         window.keepAbove = true;
     }
 }

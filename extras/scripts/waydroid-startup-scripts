@@ -48,6 +48,21 @@ start_android_16_controller_hotplug() {
 	return 0
 }
 
+announce_virtual_game_controllers() {
+	local event_uevent input_dir
+
+	# Only virtual devices exposing a Linux joystick node are controllers.
+	# Announcing every virtual input device also passes Wayland's synthetic
+	# mouse/touch devices into Android, duplicating Waydroid's compositor input
+	# stream and giving the two streams incompatible pointer coordinates.
+	for event_uevent in /sys/devices/virtual/input/input*/event*/uevent; do
+		[ -e "$event_uevent" ] || continue
+		input_dir=$(dirname "$(dirname "$event_uevent")")
+		compgen -G "$input_dir/js*" >/dev/null || continue
+		printf 'add\n' >"$event_uevent"
+	done
+}
+
 # capture the existing kernel.pid_max value
 sysctl -a 2>/dev/null | grep kernel.pid_max | cut -d " " -f 3 >"$PROFILE_HOME/orig_kernel.pid_max"
 
@@ -61,9 +76,25 @@ mount_waydroid_share_when_ready "$USER_HOME" "$BOOT_TIMEOUT_SECONDS" 2 "$WAYDROI
 
 # These are the commands to execute once Android boot and shared storage are ready.
 
-# Steam Deck controller to work in Waydroid
-echo add | tee /sys/devices/virtual/input/input*/event*/uevent
+# Steam/virtual controllers work in Waydroid without duplicating host pointer
+# and touchscreen devices already forwarded by the Wayland backend.
+announce_virtual_game_controllers
 start_android_16_controller_hotplug
+
+# Android TV's stock Leanback IME ignores pointer/touch key activation. Install
+# the verified APK cached by the installer, then keep its exact registered
+# component selected; the expanded class name is not accepted by `ime`.
+if waydroid shell -- getprop ro.build.characteristics 2>/dev/null | grep -qw tv; then
+	HELIBOARD_APK=$PROFILE_HOME/HeliBoard.apk
+	if ! waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1 &&
+		[ -r "$HELIBOARD_APK" ]; then
+		waydroid app install "$HELIBOARD_APK" || exit 1
+	fi
+	if waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1; then
+		waydroid shell -- ime enable helium314.keyboard/.latin.LatinIME || true
+		waydroid shell -- ime set helium314.keyboard/.latin.LatinIME || true
+	fi
+fi
 
 # disable initial device setup via ADB
 waydroid shell pm disable com.google.android.setupwizard

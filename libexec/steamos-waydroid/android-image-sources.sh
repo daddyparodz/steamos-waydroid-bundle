@@ -18,6 +18,30 @@ ANDROID16_TV_GAPPS_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_tv_x
 ANDROID16_TV_VANILLA_SYSTEM_URL=$SUPECHICKEN_SOURCEFORGE_BASE/system/waydroid_tv_x86_64/lineage-23.0-20260403-VANILLA-waydroid_tv_x86_64-system.zip
 ANDROID16_TV_VENDOR_URL=$SUPECHICKEN_SOURCEFORGE_BASE/vendor/waydroid_tv_x86_64/lineage-23.0-20260403-MAINLINE-waydroid_tv_x86_64-vendor.zip
 
+# HeliBoard is used instead of the Android TV Leanback keyboard, whose keys do
+# not accept touchscreen or mouse-as-touch activation in Waydroid.
+HELIBOARD_VERSION=4.1
+HELIBOARD_APK_URL=https://github.com/Helium314/HeliBoard/releases/download/v4.1/HeliBoard_4.1-release.apk
+HELIBOARD_APK_SHA256=eb9c06685ebd5b7307491da9ef15fb5e29694077a934a8699b9b6772c6f76075
+
+download_tv_touch_keyboard() {
+	local destination=$1 temporary=${1}.part
+
+	rm -f -- "$temporary"
+	if ! wget --progress=bar:force:noscroll --tries=3 --timeout=30 \
+		-O "$temporary" "$HELIBOARD_APK_URL"; then
+		printf 'error: HeliBoard %s download failed\n' "$HELIBOARD_VERSION" >&2
+		rm -f -- "$temporary"
+		return 1
+	fi
+	if ! printf '%s  %s\n' "$HELIBOARD_APK_SHA256" "$temporary" | sha256sum -c -; then
+		printf 'error: HeliBoard APK checksum verification failed\n' >&2
+		rm -f -- "$temporary"
+		return 1
+	fi
+	mv -f -- "$temporary" "$destination"
+}
+
 set_android_image_selection() {
 	local choice=$1
 

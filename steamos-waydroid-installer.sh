@@ -672,7 +672,8 @@ echo -e "$current_password\n" | sudo -S systemctl daemon-reload
 # Copy Waydroid launcher dependencies.
 cp extras/scripts/Android_Waydroid_Cage.sh extras/scripts/Android_Waydroid_Test_Cage.sh \
 	extras/scripts/Waydroid-Toolbox.sh \
-	extras/scripts/Waydroid-Updater.sh extras/scripts/select-bundle ~/Android_Waydroid
+	extras/scripts/Waydroid-Updater.sh extras/scripts/select-bundle \
+	extras/scripts/waydroid-kwin-fullscreen.js ~/Android_Waydroid
 # Toolbox delegates destructive reset operations back to this checkout so the
 # protected canonical uninstaller owns image preservation and confirmation.
 if ! printf '%s\n' "$WORKING_DIR" >~/Android_Waydroid/installer-root ||
@@ -844,7 +845,15 @@ fi
 
 if ! set_android_image_selection "$Android_Choice"; then
 	abort_run
-elif [ "$Android_Choice" == "A13_GAPPS" ]; then
+elif [[ "$Android_Choice" == TV* ]]; then
+	echo "Downloading the verified HeliBoard touch keyboard for Android TV."
+	if ! download_tv_touch_keyboard "$HOME/Android_Waydroid/HeliBoard.apk"; then
+		echo "Android TV installation requires its touch-capable keyboard." >&2
+		abort_run
+	fi
+fi
+
+if [ "$Android_Choice" == "A13_GAPPS" ]; then
 	echo Initializing Waydroid.
 	echo -e "$current_password\n" | run_profile_sudo waydroid init -s GAPPS
 	check_waydroid_init

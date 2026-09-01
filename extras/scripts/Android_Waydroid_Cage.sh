@@ -51,6 +51,8 @@ TARGET_CHECK="$BUNDLE/tools/check-bundle-target.sh"
 COMPATIBILITY_REPORT="$BUNDLE/tools/compatibility-report.sh"
 TARGET_ALLOW="$HOME/.local/opt/steamos-waydroid/allow-target-mismatch"
 CONFIG_DIR="$SCRIPT_DIR/config"
+KWIN_FULLSCREEN_SCRIPT="$SCRIPT_DIR/waydroid-kwin-fullscreen.js"
+KWIN_FULLSCREEN_PLUGIN="steamos-waydroid-fullscreen-$WAYDROID_PROFILE"
 RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
 # KDE runs a Wayland session on Steam Deck. Force Cage to nest through
 # Wayland so touchscreen events are forwarded instead of degraded by X11.
@@ -121,9 +123,16 @@ $SHARE_OUTPUT"
 fi
 
 cleanup_required=false
+kwin_fullscreen_loaded=false
 LAUNCH_ERROR_LOG="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-launch.XXXXXX")"
 
 cleanup() {
+	if [ "$kwin_fullscreen_loaded" = true ]; then
+		qdbus6 org.kde.KWin /Scripting \
+			org.kde.kwin.Scripting.unloadScript \
+			"$KWIN_FULLSCREEN_PLUGIN" >/dev/null 2>&1 || true
+		kwin_fullscreen_loaded=false
+	fi
 	if [ "$cleanup_required" = true ]; then
 		cleanup_required=false
 		sudo /usr/bin/waydroid-shutdown-scripts "$WAYDROID_PROFILE" || true
@@ -150,6 +159,20 @@ Run the SteamOS Waydroid installer in Desktop Mode to repair the reported proble
 
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
+
+# Load the rule before Cage maps its outer window. Starting fullscreen avoids
+# a maximized-work-area resize and preserves 1:1 input coordinates. Game Mode
+# has no KWin scripting service, so this is intentionally best-effort there.
+if [ -r "$KWIN_FULLSCREEN_SCRIPT" ] && command -v qdbus6 >/dev/null 2>&1; then
+	qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript \
+		"$KWIN_FULLSCREEN_PLUGIN" >/dev/null 2>&1 || true
+	if qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript \
+		"$KWIN_FULLSCREEN_SCRIPT" "$KWIN_FULLSCREEN_PLUGIN" >/dev/null 2>&1; then
+		qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start \
+			>/dev/null 2>&1 || true
+		kwin_fullscreen_loaded=true
+	fi
+fi
 
 # Check profile ownership before stopping any existing user session. This
 # prevents a test launch from disrupting a running main environment (and vice
@@ -202,6 +225,40 @@ $SERVICE_STATUS
 
 Run the SteamOS Waydroid installer in Desktop Mode to repair the host integration."
 	exit 1
+fi
+
+# On Plasma, run Waydroid directly on KWin. Nesting it inside Cage on the
+# Steam Deck's physically portrait panel makes wlroots apply the host rotation
+# twice to pointer/touch coordinates. The picture looks correct, but IME taps
+# land elsewhere. KWin supplies fullscreen kiosk presentation itself here.
+if command -v qdbus6 >/dev/null 2>&1 &&
+	qdbus6 org.kde.KWin /KWin supportInformation >/dev/null 2>&1; then
+	if [ -z "${1:-}" ]; then
+		/usr/bin/waydroid show-full-ui &
+		WAYDROID_SESSION_PID=$!
+	else
+		PACKAGE=$1
+		/usr/bin/waydroid session start &
+		WAYDROID_SESSION_PID=$!
+	fi
+
+	if ! sudo /usr/bin/waydroid-startup-scripts "$WAYDROID_PROFILE"; then
+		kill "$WAYDROID_SESSION_PID" 2>/dev/null || true
+		wait "$WAYDROID_SESSION_PID" 2>/dev/null || true
+		exit 1
+	fi
+
+	waydroid prop set persist.waydroid.fake_wifi "$(cat "$CONFIG_DIR/fake_wifi")"
+	waydroid prop set persist.waydroid.fake_touch "$(cat "$CONFIG_DIR/fake_touch")"
+
+	if [ -n "${PACKAGE:-}" ]; then
+		sleep 1
+		/usr/bin/waydroid app launch "$PACKAGE"
+		/usr/bin/waydroid show-full-ui &
+	fi
+
+	wait "$WAYDROID_SESSION_PID"
+	exit $?
 fi
 
 if [ -z "${1:-}" ]; then

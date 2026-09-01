@@ -324,6 +324,9 @@ reinstall_exit_cleanup() {
 }
 
 prompt_return_to_gaming_mode() {
+	if [ "${STEAMOS_WAYDROID_NONINTERACTIVE:-false}" = true ]; then
+		return 0
+	fi
 	if zenity --question --text="Do you Want to Return to Gaming Mode?"; then
 		qdbus org.kde.Shutdown /Shutdown org.kde.Shutdown.logout
 	fi
@@ -808,7 +811,9 @@ echo -e "$current_password\n" | sudo -S cp extras/fixes/audio.rc /var/lib/waydro
 echo -e "$current_password\n" | sudo -S wget https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn/hosts \
 	-O /var/lib/waydroid/overlay/system/etc/hosts
 
-if [ "$TEST_INSTALL_MODE" = true ]; then
+if [ -n "${STEAMOS_WAYDROID_ANDROID_CHOICE:-}" ]; then
+	Android_Choice=$STEAMOS_WAYDROID_ANDROID_CHOICE
+elif [ "$TEST_INSTALL_MODE" = true ]; then
 	Android_Choice=$(zenity --width 1040 --height 480 --list --radiolist \
 		--title "Install Waydroid Test - choose one Android image" \
 		--column "Select One" \

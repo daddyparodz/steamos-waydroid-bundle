@@ -303,6 +303,10 @@ if [ -z "${1:-}" ]; then
 		readonly CONFIG_DIR="$3"
 		readonly WAYDROID_PROFILE="$4"
 
+		"$WLR_RANDR" \
+			--output X11-1 \
+			--custom-mode "$RESOLUTION"
+
 		/usr/bin/waydroid show-full-ui &
 		readonly WAYDROID_SESSION_PID=$!
 
@@ -342,6 +346,10 @@ else
 		readonly CONFIG_DIR="$3"
 		readonly PACKAGE="$4"
 		readonly WAYDROID_PROFILE="$5"
+
+		"$WLR_RANDR" \
+			--output X11-1 \
+			--custom-mode "$RESOLUTION"
 
 		/usr/bin/waydroid session start &
 		readonly WAYDROID_SESSION_PID=$!

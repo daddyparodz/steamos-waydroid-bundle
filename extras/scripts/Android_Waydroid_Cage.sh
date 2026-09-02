@@ -254,11 +254,6 @@ if command -v qdbus6 >/dev/null 2>&1 &&
 		[ -x "$SCRIPT_DIR/waydroid-touch-nav.py" ]; then
 		"$SCRIPT_DIR/waydroid-touch-nav.py" &
 		touch_nav_pid=$!
-	else
-		# Phone images must stay in one compositor surface. Multi-window mode
-		# leaves old Google login activities mapped above the resumed activity,
-		# producing visible but unclickable stale buttons.
-		waydroid prop set persist.waydroid.multi_windows false >/dev/null 2>&1 || true
 	fi
 	if [ -z "${1:-}" ]; then
 		/usr/bin/waydroid show-full-ui &
@@ -281,6 +276,10 @@ if command -v qdbus6 >/dev/null 2>&1 &&
 	if [ -n "${PACKAGE:-}" ]; then
 		sleep 1
 		/usr/bin/waydroid app launch "$PACKAGE"
+		# Waydroid's host app launcher forces immersive.full after launching a
+		# package. Remove that host policy after the launch returns so Android's
+		# real navigation bar can be revealed normally inside fullscreen games.
+		waydroid shell -- settings delete global policy_control || true
 		/usr/bin/waydroid show-full-ui &
 	fi
 
@@ -369,6 +368,7 @@ else
 
 		/usr/bin/waydroid app launch "$PACKAGE" &
 		sleep 1
+		waydroid shell -- settings delete global policy_control || true
 
 		/usr/bin/waydroid show-full-ui &
 		wait "$WAYDROID_SESSION_PID"

@@ -57,6 +57,12 @@ RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
 # KDE runs a Wayland session on Steam Deck. Force Cage to nest through
 # Wayland so touchscreen events are forwarded instead of degraded by X11.
 export WLR_BACKENDS=wayland
+# Steam Game Mode exports the compositor socket under its gamescope-specific
+# name instead of WAYLAND_DISPLAY. wlroots only consults WAYLAND_DISPLAY, so
+# carry the socket across before Cage selects its nested Wayland backend.
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" ]; then
+	export WAYLAND_DISPLAY="$GAMESCOPE_WAYLAND_DISPLAY"
+fi
 
 if [ ! -x "$CAGE" ] ||
 	[ ! -x "$WLR_RANDR" ] ||
@@ -290,7 +296,7 @@ if [ -z "${1:-}" ]; then
 	# Variables inside this single-quoted command are intentionally expanded
 	# by the inner bash process using the positional arguments supplied below.
 	# shellcheck disable=SC2016
-	if "$CAGE" -- bash -c '
+	if env -u LD_PRELOAD "$CAGE" -- bash -c '
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"
@@ -329,7 +335,7 @@ else
 	# Variables inside this single-quoted command are intentionally expanded
 	# by the inner bash process using the positional arguments supplied below.
 	# shellcheck disable=SC2016
-	if "$CAGE" -- bash -c '
+	if env -u LD_PRELOAD "$CAGE" -- bash -c '
 		readonly WLR_RANDR="$1"
 		readonly RESOLUTION="$2"
 		readonly CONFIG_DIR="$3"

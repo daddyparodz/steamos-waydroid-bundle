@@ -34,6 +34,16 @@ fi
 resolve_waydroid_profile "$REQUESTED_PROFILE" || exit $?
 export XDG_DATA_HOME=$WAYDROID_XDG_DATA_HOME
 
+# Steam and Plasma can dispatch the shortcut twice before the first window is
+# mapped. Only one launcher may own mount/session lifecycle for a profile; a
+# duplicate invocation exits quietly and leaves the in-progress launch alone.
+LAUNCH_LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid"
+mkdir -p "$LAUNCH_LOCK_DIR"
+exec {LAUNCH_LOCK_FD}>"$LAUNCH_LOCK_DIR/launcher-$WAYDROID_PROFILE.lock"
+if ! flock -n "$LAUNCH_LOCK_FD"; then
+	exit 0
+fi
+
 if [ -x "$LOCAL_BUNDLE_SELECTOR" ] &&
 	! SELECTOR_OUTPUT=$("$LOCAL_BUNDLE_SELECTOR" 2>&1); then
 	kdialog --error "No installed Cage bundle is compatible with this SteamOS host.

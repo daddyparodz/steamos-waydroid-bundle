@@ -1,10 +1,3 @@
-// Waydroid games often submit frames without waiting for vblank. On the
-// Steam Deck's physically portrait panel, the resulting horizontal tear is
-// rotated into a prominent vertical seam. Disable tearing only for the
-// lifetime of this launcher-loaded script; the launcher restores KWin's
-// previous runtime value during cleanup without changing KDE configuration.
-options.allowTearing = false;
-
 // Keep the Android surface at the compositor's exact logical output size.
 // Letting Plasma maximize it into the work area leaves the panel over Android
 // and makes its visible controls disagree with their input coordinates.

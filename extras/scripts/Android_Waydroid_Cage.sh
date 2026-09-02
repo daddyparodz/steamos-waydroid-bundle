@@ -134,7 +134,6 @@ fi
 
 cleanup_required=false
 kwin_fullscreen_loaded=false
-kwin_allow_tearing=
 touch_nav_pid=
 LAUNCH_ERROR_LOG="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-launch.XXXXXX")"
 
@@ -149,17 +148,6 @@ cleanup() {
 			org.kde.kwin.Scripting.unloadScript \
 			"$KWIN_FULLSCREEN_PLUGIN" >/dev/null 2>&1 || true
 		kwin_fullscreen_loaded=false
-		if [ -n "$kwin_allow_tearing" ]; then
-			KWIN_RESTORE_SCRIPT="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/steamos-waydroid-kwin-restore.XXXXXX.js")"
-			printf 'options.allowTearing = %s;\n' "$kwin_allow_tearing" >"$KWIN_RESTORE_SCRIPT"
-			qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript \
-				"$KWIN_RESTORE_SCRIPT" "$KWIN_FULLSCREEN_PLUGIN-restore" >/dev/null 2>&1 || true
-			qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1 || true
-			qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript \
-				"$KWIN_FULLSCREEN_PLUGIN-restore" >/dev/null 2>&1 || true
-			rm -f -- "$KWIN_RESTORE_SCRIPT"
-			kwin_allow_tearing=
-		fi
 	fi
 	if [ "$cleanup_required" = true ]; then
 		cleanup_required=false
@@ -192,8 +180,6 @@ trap 'exit 130' HUP INT TERM
 # a maximized-work-area resize and preserves 1:1 input coordinates. Game Mode
 # has no KWin scripting service, so this is intentionally best-effort there.
 if [ -r "$KWIN_FULLSCREEN_SCRIPT" ] && command -v qdbus6 >/dev/null 2>&1; then
-	kwin_allow_tearing="$(qdbus6 org.kde.KWin /KWin supportInformation 2>/dev/null |
-		awk '/^allowTearing:/ && !found {print $2; found=1}')"
 	qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript \
 		"$KWIN_FULLSCREEN_PLUGIN" >/dev/null 2>&1 || true
 	if qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript \

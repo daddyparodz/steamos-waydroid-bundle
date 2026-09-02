@@ -54,14 +54,15 @@ CONFIG_DIR="$SCRIPT_DIR/config"
 KWIN_FULLSCREEN_SCRIPT="$SCRIPT_DIR/waydroid-kwin-fullscreen.js"
 KWIN_FULLSCREEN_PLUGIN="steamos-waydroid-fullscreen-$WAYDROID_PROFILE"
 RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
-# KDE runs a Wayland session on Steam Deck. Force Cage to nest through
-# Wayland so touchscreen events are forwarded instead of degraded by X11.
-export WLR_BACKENDS=wayland
-# Steam Game Mode exports the compositor socket under its gamescope-specific
-# name instead of WAYLAND_DISPLAY. wlroots only consults WAYLAND_DISPLAY, so
-# carry the socket across before Cage selects its nested Wayland backend.
-if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" ]; then
-	export WAYLAND_DISPLAY="$GAMESCOPE_WAYLAND_DISPLAY"
+# KDE Desktop needs nested Wayland for correctly transformed touchscreen
+# coordinates. Game Mode instead needs an X11 Cage window: Gamescope does not
+# associate Cage's generic native-Wayland app-id with the Steam shortcut, so
+# Steam displays its loading spinner forever even after Android is ready.
+if [ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" ] && [ -n "${SteamAppId:-}" ]; then
+	export WLR_BACKENDS=x11
+	unset WAYLAND_DISPLAY
+else
+	export WLR_BACKENDS=wayland
 fi
 
 if [ ! -x "$CAGE" ] ||

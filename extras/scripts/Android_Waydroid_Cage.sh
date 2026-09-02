@@ -318,6 +318,12 @@ if [ -z "${1:-}" ]; then
 			exit 1
 		fi
 
+		# Some immutable host installs still carry an older startup helper that
+		# resets this to "default". Honor each requested app orientation in
+		# the nested Game Mode session as well as on the Plasma direct path.
+		waydroid shell -- wm fixed-to-user-rotation disabled || true
+		waydroid shell -- wm set-ignore-orientation-request false || true
+
 		waydroid prop set \
 			persist.waydroid.fake_wifi \
 			"$(cat "$CONFIG_DIR/fake_wifi")"
@@ -361,6 +367,9 @@ else
 			wait 2>/dev/null || true
 			exit 1
 		fi
+
+		waydroid shell -- wm fixed-to-user-rotation disabled || true
+		waydroid shell -- wm set-ignore-orientation-request false || true
 
 		waydroid prop set \
 			persist.waydroid.fake_wifi \

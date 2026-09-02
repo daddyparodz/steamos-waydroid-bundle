@@ -53,7 +53,10 @@ TARGET_ALLOW="$HOME/.local/opt/steamos-waydroid/allow-target-mismatch"
 CONFIG_DIR="$SCRIPT_DIR/config"
 KWIN_FULLSCREEN_SCRIPT="$SCRIPT_DIR/waydroid-kwin-fullscreen.js"
 KWIN_FULLSCREEN_PLUGIN="steamos-waydroid-fullscreen-$WAYDROID_PROFILE"
-RESOLUTION="$(xdpyinfo | awk '/dimensions/{print $2; exit}')"
+# Read the complete xdpyinfo stream. Exiting awk after the first match sends
+# SIGPIPE to xdpyinfo; with pipefail enabled that intermittently aborts the
+# launcher before Waydroid is mounted.
+RESOLUTION="$(xdpyinfo | awk '/dimensions/ && !found {print $2; found=1}')"
 # KDE Desktop needs nested Wayland for correctly transformed touchscreen
 # coordinates. Game Mode instead needs an X11 Cage window: Gamescope does not
 # associate Cage's generic native-Wayland app-id with the Steam shortcut, so
@@ -272,13 +275,6 @@ if command -v qdbus6 >/dev/null 2>&1 &&
 		exit 1
 	fi
 
-	# Older host helpers reset this to "default", which letterboxes portrait
-	# apps inside Waydroid's landscape surface. Enforce the profile behavior at
-	# the launcher boundary as well so upgraded launchers work before the next
-	# immutable SteamOS host-package refresh.
-	waydroid shell -- wm fixed-to-user-rotation disabled || true
-	waydroid shell -- wm set-ignore-orientation-request false || true
-
 	waydroid prop set persist.waydroid.fake_wifi "$(cat "$CONFIG_DIR/fake_wifi")"
 	waydroid prop set persist.waydroid.fake_touch "$(cat "$CONFIG_DIR/fake_touch")"
 
@@ -317,12 +313,6 @@ if [ -z "${1:-}" ]; then
 			wait 2>/dev/null || true
 			exit 1
 		fi
-
-		# Some immutable host installs still carry an older startup helper that
-		# resets this to "default". Honor each requested app orientation in
-		# the nested Game Mode session as well as on the Plasma direct path.
-		waydroid shell -- wm fixed-to-user-rotation disabled || true
-		waydroid shell -- wm set-ignore-orientation-request false || true
 
 		waydroid prop set \
 			persist.waydroid.fake_wifi \
@@ -367,9 +357,6 @@ else
 			wait 2>/dev/null || true
 			exit 1
 		fi
-
-		waydroid shell -- wm fixed-to-user-rotation disabled || true
-		waydroid shell -- wm set-ignore-orientation-request false || true
 
 		waydroid prop set \
 			persist.waydroid.fake_wifi \

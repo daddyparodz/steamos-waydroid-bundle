@@ -16,16 +16,29 @@ permissions:
 jobs:
   shell-validation:
     name: Shell validation
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+    container: ubuntu:24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install analysis tools
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes shellcheck shfmt
+          set -euo pipefail
+          apt-get update
+          apt-get install --yes shellcheck shfmt ripgrep python3 coreutils util-linux
 
       - name: Check Bash syntax
         shell: bash
@@ -64,6 +77,11 @@ jobs:
 
       - name: Run uninstall failure-path tests
         run: |
+          set -euo pipefail
+          # Ubuntu's existing unprivileged user preserves fixture HOME semantics.
+          chown -R ubuntu:ubuntu "$GITHUB_WORKSPACE"
+          runuser -u ubuntu -- env -u SUDO_USER HOME=/home/ubuntu bash -euo pipefail <<'TESTS'
+          python3 tests/test-shell-workflow.py
           tests/test-uninstall.sh
           tests/test-maintainer-config.sh
           tests/test-shell-messages.sh
@@ -76,3 +94,4 @@ jobs:
           tests/test-test-environment.sh
           tests/test-remove-test-environment.sh
           tests/test-android-image-sources.sh
+          TESTS

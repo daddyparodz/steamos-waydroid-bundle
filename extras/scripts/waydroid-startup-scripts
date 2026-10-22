@@ -114,7 +114,7 @@ fi
 # racing the package scanner and falling back to the stock AOSP keyboard.
 if ! waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1 &&
 	waydroid shell -- pm list packages -u helium314.keyboard 2>/dev/null |
-		grep -Fq 'package:helium314.keyboard'; then
+	grep -Fq 'package:helium314.keyboard'; then
 	waydroid shell -- cmd package install-existing --user 0 helium314.keyboard || true
 fi
 if waydroid shell -- pm path helium314.keyboard >/dev/null 2>&1; then

@@ -27,10 +27,45 @@ class WorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
             apt = path / 'apt-get'
-            apt.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$APT_LOG"\n')
+            apt.write_text('''#!/bin/bash
+printf "%s\\n" "$*" >> "$APT_LOG"
+if [[ "$1" == install ]]; then
+    if [[ "${DEBIAN_FRONTEND:-}" != noninteractive || "${TZ:-}" != Etc/UTC ]]; then
+        echo 'debconf: Geographic area:' >&2
+        touch "$INPUT_READ"
+        read -r -t 0.1 answer || true
+        exit 86
+    fi
+fi
+''')
             apt.chmod(0o755)
-            env = dict(os.environ, PATH=tmp + ':' + os.environ['PATH'], APT_LOG=str(path / 'apt.log'))
-            subprocess.run(['bash', '-euo', 'pipefail', '-c', block('Install analysis tools')], env=env, check=True)
+            env = dict(os.environ, PATH=tmp + ':' + os.environ['PATH'],
+                       APT_LOG=str(path / 'apt.log'), INPUT_READ=str(path / 'input-read'))
+            # Apply the real step metadata, never a separately invented safe environment.
+            env.pop('DEBIAN_FRONTEND', None)
+            env.pop('TZ', None)
+            text = WORKFLOW.read_text()
+            step = text.split('      - name: Install analysis tools\n', 1)[1].split('      - name:', 1)[0]
+            metadata = step.split('        run: |', 1)[0]
+            in_env = False
+            for line in metadata.splitlines():
+                if line == '        env:':
+                    in_env = True
+                elif in_env and line.startswith('          '):
+                    key, value = line.strip().split(': ', 1)
+                    env[key] = value
+                else:
+                    in_env = False
+            result = subprocess.run(['bash', '-euo', 'pipefail', '-c', block('Install analysis tools')],
+                                    env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((path / 'input-read').exists(), 'debconf attempted to read input')
+            self.assertEqual(env.get('DEBIAN_FRONTEND'), 'noninteractive')
+            self.assertEqual(env.get('TZ'), 'Etc/UTC')
+            self.assertEqual(text.count('DEBIAN_FRONTEND:'), 1)
+            self.assertEqual(text.count('TZ:'), 1)
+            self.assertIn('        timeout-minutes: 10\n', metadata)
+            self.assertIn('    timeout-minutes: 30\n', text.split('    steps:', 1)[0])
             packages = (path / 'apt.log').read_text().split()
             for package in ('shellcheck', 'shfmt', 'ripgrep', 'python3', 'coreutils', 'util-linux'):
                 self.assertIn(package, packages)

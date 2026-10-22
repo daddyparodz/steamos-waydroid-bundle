@@ -18,6 +18,7 @@ jobs:
     name: Shell validation
     runs-on: [self-hosted, Linux, X64]
     container: ubuntu:24.04
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -30,6 +31,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install analysis tools
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
         run: |
           set -euo pipefail
           apt-get update
